@@ -1,9 +1,18 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function TomTomKeyDialog({ onSaved, onSkip }: { onSaved: (key: string) => void; onSkip: () => void }) {
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "Escape") onSkip();
+  }
 
   async function save() {
     const trimmedKey = key.trim();
@@ -29,23 +38,39 @@ export function TomTomKeyDialog({ onSaved, onSkip }: { onSaved: (key: string) =>
 
   return (
     <div className="modal-backdrop">
-      <section className="modal key-modal" role="dialog" aria-modal="true" aria-labelledby="tomtom-key-title">
+      <section
+        className="modal key-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tomtom-key-title"
+        aria-describedby="tomtom-key-description"
+        onKeyDown={handleKeyDown}
+      >
         <div className="modal-head">
           <span className="eyebrow">Preview map</span>
           <h2 id="tomtom-key-title">TomTom API key required for map preview</h2>
         </div>
-        <p>No TOMTOM_API_KEY was found in .env. Enter one to enable the map, or skip to continue with the fixture table.</p>
+        <p id="tomtom-key-description">
+          No browser map key is available. Enter one to enable the map, or skip to continue with the fixture table.
+        </p>
         <label className="input-label" htmlFor="tomtom-key">
           TomTom API key
         </label>
         <input
           id="tomtom-key"
+          ref={inputRef}
           type="password"
           value={key}
           onChange={(event) => setKey(event.target.value)}
           placeholder="Paste API key"
+          aria-invalid={error ? "true" : "false"}
+          aria-describedby={error ? "tomtom-key-error" : "tomtom-key-description"}
         />
-        {error ? <p className="error">{error}</p> : null}
+        {error ? (
+          <p className="error" id="tomtom-key-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={onSkip}>
             Skip map

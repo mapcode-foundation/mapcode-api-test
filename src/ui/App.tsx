@@ -101,8 +101,16 @@ export function App() {
   }, [summary.completedCases, summary.totalCases]);
 
   const selectedDiscrepancyId = selectedDiscrepancy?.id;
-  const mapKeyStatus = hasTomTomApiKey === undefined ? "checking map key" : hasTomTomApiKey ? "map key ready" : "map key missing";
-  const showTomTomModal = isMapModalOpen && hasTomTomApiKey === false;
+  const hasBrowserTomTomKey = Boolean(runtimeTomTomApiKey);
+  const mapKeyStatus =
+    hasTomTomApiKey === undefined
+      ? "checking map key"
+      : hasBrowserTomTomKey
+        ? "map key in browser"
+        : hasTomTomApiKey
+          ? "map key on server"
+          : "map key missing";
+  const showTomTomModal = isMapModalOpen && !hasBrowserTomTomKey;
 
   return (
     <div className="app-shell">
@@ -196,7 +204,7 @@ export function App() {
         <CoverageMap
           points={fixtures}
           states={fixtureStates}
-          mapEnabled={hasTomTomApiKey === true}
+          mapEnabled={hasBrowserTomTomKey}
           apiKey={runtimeTomTomApiKey}
         />
 

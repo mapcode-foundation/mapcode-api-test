@@ -8,11 +8,10 @@ export interface ServerInput {
   env?: NodeJS.ProcessEnv;
 }
 
-let runtimeTomTomApiKey: string | undefined;
-
 export function createServerApp(input: ServerInput = {}) {
   loadEnv();
   const env = input.env ?? process.env;
+  let runtimeTomTomApiKey: string | undefined;
   const app = express();
   app.use(express.json());
   const staticDir = resolve("dist/ui");

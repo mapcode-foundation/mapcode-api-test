@@ -26,7 +26,7 @@ export function CoverageMap({ points, states, mapEnabled, apiKey }: CoverageMapP
   const queuedCount = useMemo(() => points.filter((point) => stateFor(point, states) === "queued").length, [points, states]);
 
   useEffect(() => {
-    if (!mapEnabled || !mapRef.current) return undefined;
+    if (!mapEnabled || !mapRef.current || !trimmedApiKey) return undefined;
 
     let cancelled = false;
     let map: TomTomMapHandle | undefined;
@@ -40,8 +40,7 @@ export function CoverageMap({ points, states, mapEnabled, apiKey }: CoverageMapP
         ]);
 
         if (cancelled || !mapRef.current) return;
-        if (!trimmedApiKey && !TomTomConfig.instance.get().apiKey) return;
-        if (trimmedApiKey) TomTomConfig.instance.put({ apiKey: trimmedApiKey });
+        TomTomConfig.instance.put({ apiKey: trimmedApiKey });
 
         map = new TomTomMap({
           mapLibre: {
@@ -71,6 +70,13 @@ export function CoverageMap({ points, states, mapEnabled, apiKey }: CoverageMapP
           <span className="eyebrow">Coverage preview</span>
           <h2>Fixture Table</h2>
           <table className="fixture-table">
+            <caption>Generated fixture points</caption>
+            <thead>
+              <tr>
+                <th scope="col">Fixture</th>
+                <th scope="col">State</th>
+              </tr>
+            </thead>
             <tbody>
               {points.map((point) => (
                 <tr key={point.id}>
