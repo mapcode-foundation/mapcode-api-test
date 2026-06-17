@@ -54,10 +54,11 @@ export class Runner {
   }
 
   async start(): Promise<RunSummary> {
-    this.emit({ type: "run-summary", summary: this.summary });
+    this.emitSummary();
     for (const request of this.input.cases) {
       if (this.stopped) break;
-      while (this.paused) await new Promise((resolve) => setTimeout(resolve, 100));
+      while (this.paused && !this.stopped) await new Promise((resolve) => setTimeout(resolve, 100));
+      if (this.stopped) break;
       if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "active" });
       const { java, typescript } = await this.fetchPair(request);
       this.emit({ type: "current-case", request, java, typescript });
@@ -78,7 +79,7 @@ export class Runner {
           diffs,
           java,
           typescript,
-          replay: `${request.method} ${request.path}`
+          replay: `${request.method} ${formatReplayPath(request)}`
         };
         this.emit({ type: "discrepancy", discrepancy });
         if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "failed" });
@@ -86,13 +87,23 @@ export class Runner {
         this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "passed" });
       }
       this.summary.completedCases += 1;
-      this.emit({ type: "run-summary", summary: this.summary });
+      this.emitSummary();
     }
-    this.emit({ type: "run-complete", summary: this.summary });
+    this.emit({ type: "run-complete", summary: { ...this.summary } });
     return this.summary;
+  }
+
+  private emitSummary(): void {
+    this.emit({ type: "run-summary", summary: { ...this.summary } });
   }
 
   private emit(event: RunnerEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+function formatReplayPath(request: RequestCase): string {
+  const params = new URLSearchParams(request.query ?? {});
+  const query = params.toString();
+  return query.length > 0 ? `${request.path}?${query}` : request.path;
 }
