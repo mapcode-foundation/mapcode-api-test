@@ -59,9 +59,11 @@ button:disabled {
 .dashboard-header,
 .toolbar,
 .run-summary,
+.coverage-preview,
 .pane,
 .list-panel,
 .detail-panel,
+.modal,
 .key-modal {
   border: 1px solid #d6dde5;
   border-radius: 8px;
@@ -246,6 +248,121 @@ input {
 .dashboard-main {
   display: grid;
   gap: 14px;
+}
+
+.coverage-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  gap: 14px;
+  padding: 14px;
+}
+
+.coverage-map {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid #d8e1ea;
+  border-radius: 7px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.55) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(145deg, #d9edf0, #e6ecf3 54%, #dfe8df);
+}
+
+.tomtom-map,
+.coverage-static-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.coverage-static-layer {
+  z-index: 2;
+  pointer-events: none;
+}
+
+.point {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  margin: -7px 0 0 -7px;
+  background: #64748b;
+  box-shadow: 0 2px 8px rgba(22, 31, 43, 0.2);
+}
+
+.point.queued,
+.point-state.queued {
+  background: #64748b;
+}
+
+.point.active,
+.point-state.active {
+  background: #0284c7;
+}
+
+.point.passed,
+.point-state.passed {
+  background: #16a34a;
+}
+
+.point.failed,
+.point-state.failed {
+  background: #dc2626;
+}
+
+.point.blocked,
+.point-state.blocked {
+  background: #a16207;
+}
+
+.coverage-side {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 8px;
+}
+
+.coverage-side h2 {
+  color: #14202c;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.coverage-side p {
+  color: #5c6c7b;
+  font-size: 13px;
+}
+
+.fixture-table {
+  width: 100%;
+  margin-top: 4px;
+  border-collapse: collapse;
+  color: #273544;
+  font-size: 13px;
+}
+
+.fixture-table td {
+  border-top: 1px solid #e2e8ef;
+  padding: 9px 0;
+}
+
+.fixture-table td:last-child {
+  width: 92px;
+  padding-left: 10px;
+  text-align: right;
+}
+
+.point-state {
+  display: inline-flex;
+  min-width: 72px;
+  justify-content: center;
+  border-radius: 999px;
+  color: #ffffff;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .run-summary {
@@ -547,6 +664,11 @@ input {
   font-size: 14px;
 }
 
+.error {
+  color: #b42339 !important;
+  font-weight: 800;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -575,6 +697,7 @@ input {
   }
 
   .workspace,
+  .coverage-preview,
   .service-grid {
     grid-template-columns: 1fr;
   }

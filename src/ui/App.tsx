@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { getCases, getConfig, getFixtures } from "./api";
+import { CoverageMap } from "./components/CoverageMap";
 import { DiscrepancyDetail } from "./components/DiscrepancyDetail";
 import { DiscrepancyList } from "./components/DiscrepancyList";
 import { RunSummary as RunSummaryView } from "./components/RunSummary";
 import { ServicePane } from "./components/ServicePane";
-import type { Discrepancy, FixturePoint, RequestCase, RunProfileName, RunSummary } from "../shared/types";
+import { TomTomKeyDialog } from "./components/TomTomKeyDialog";
+import type { Discrepancy, FixturePoint, PointState, RequestCase, RunProfileName, RunSummary } from "../shared/types";
 
 const profiles: RunProfileName[] = ["Fast", "Deep", "Custom"];
 
@@ -30,7 +32,7 @@ export function App() {
   const [selectedDiscrepancy, setSelectedDiscrepancy] = useState<Discrepancy | undefined>();
   const [hasTomTomApiKey, setHasTomTomApiKey] = useState<boolean | undefined>();
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
-  const [tomTomKeyDraft, setTomTomKeyDraft] = useState("");
+  const [runtimeTomTomApiKey, setRuntimeTomTomApiKey] = useState<string | undefined>();
   const [runState, setRunState] = useState<RunState>("idle");
   const [reportSaved, setReportSaved] = useState(false);
   const [loadMessage, setLoadMessage] = useState("Loading coordinator state");
@@ -89,6 +91,10 @@ export function App() {
   }, [profile]);
 
   const currentCase = useMemo(() => cases[0], [cases]);
+  const fixtureStates = useMemo<Record<string, PointState>>(
+    () => Object.fromEntries(fixtures.map((point) => [point.id, "queued" as PointState])),
+    [fixtures]
+  );
   const progress = useMemo(() => {
     if (summary.totalCases === 0) return 0;
     return Math.round((summary.completedCases / summary.totalCases) * 100);
@@ -187,6 +193,12 @@ export function App() {
 
       <main className="dashboard-main">
         <RunSummaryView summary={summary} />
+        <CoverageMap
+          points={fixtures}
+          states={fixtureStates}
+          mapEnabled={hasTomTomApiKey === true}
+          apiKey={runtimeTomTomApiKey}
+        />
 
         <section className="workspace" aria-label="Runner workspace">
           <div className="service-stack">
@@ -212,38 +224,14 @@ export function App() {
       </main>
 
       {showTomTomModal ? (
-        <div className="modal-backdrop">
-          <section className="key-modal" role="dialog" aria-modal="true" aria-labelledby="tomtom-key-title">
-            <div className="modal-head">
-              <span className="eyebrow">Preview map</span>
-              <h2 id="tomtom-key-title">TomTom API key required</h2>
-            </div>
-            <p>Coverage preview needs a key before the map pane can be enabled.</p>
-            <label className="input-label" htmlFor="tomtom-key">
-              TomTom API key
-            </label>
-            <input
-              id="tomtom-key"
-              value={tomTomKeyDraft}
-              onChange={(event) => setTomTomKeyDraft(event.target.value)}
-              placeholder="Paste key"
-              type="password"
-            />
-            <div className="modal-actions">
-              <button type="button" className="secondary" onClick={() => setIsMapModalOpen(false)}>
-                Skip map
-              </button>
-              <button
-                type="button"
-                className="primary"
-                disabled={tomTomKeyDraft.trim().length === 0}
-                onClick={() => setIsMapModalOpen(false)}
-              >
-                Save key
-              </button>
-            </div>
-          </section>
-        </div>
+        <TomTomKeyDialog
+          onSkip={() => setIsMapModalOpen(false)}
+          onSaved={(key) => {
+            setRuntimeTomTomApiKey(key);
+            setHasTomTomApiKey(true);
+            setIsMapModalOpen(false);
+          }}
+        />
       ) : null}
     </div>
   );

@@ -8,6 +8,8 @@ export interface ServerInput {
   env?: NodeJS.ProcessEnv;
 }
 
+let runtimeTomTomApiKey: string | undefined;
+
 export function createServerApp(input: ServerInput = {}) {
   loadEnv();
   const env = input.env ?? process.env;
@@ -17,7 +19,15 @@ export function createServerApp(input: ServerInput = {}) {
   if (existsSync(staticDir)) app.use(express.static(staticDir));
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
-  app.get("/api/config", (_req, res) => res.json({ hasTomTomApiKey: Boolean(env.TOMTOM_API_KEY) }));
+  app.get("/api/config", (_req, res) =>
+    res.json({ hasTomTomApiKey: Boolean(env.TOMTOM_API_KEY || runtimeTomTomApiKey) })
+  );
+  app.post("/api/config/tomtom-key", (req, res) => {
+    const key = typeof req.body?.key === "string" ? req.body.key.trim() : "";
+    if (key.length < 8) return res.status(400).json({ error: "TomTom API key is too short" });
+    runtimeTomTomApiKey = key;
+    res.json({ hasTomTomApiKey: true });
+  });
   app.get("/api/fixtures", async (_req, res, next) => {
     try {
       const fixtureSet = await loadFixtureSet("fixtures/fixture-set.json");
