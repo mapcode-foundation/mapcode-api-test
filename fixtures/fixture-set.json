@@ -1,0 +1,58 @@
+{
+  "id": "starter-20260617",
+  "seed": 20260617,
+  "source": "hand-curated starter set for MVP; generator version starter-1",
+  "points": [
+    {
+      "id": "capital-nld-amsterdam",
+      "category": "capital",
+      "label": "Amsterdam, NLD",
+      "lat": 52.376514,
+      "lon": 4.908543,
+      "territory": "NLD",
+      "source": "capital"
+    },
+    {
+      "id": "capital-lux-luxembourg",
+      "category": "capital",
+      "label": "Luxembourg, LUX",
+      "lat": 49.611622,
+      "lon": 6.131935,
+      "territory": "LUX",
+      "source": "capital"
+    },
+    {
+      "id": "country-nld-sample",
+      "category": "country",
+      "label": "Netherlands sample",
+      "lat": 52.159853,
+      "lon": 4.49979,
+      "territory": "NLD",
+      "source": "country-sample"
+    },
+    {
+      "id": "ocean-atlantic-mid",
+      "category": "ocean",
+      "label": "Atlantic sample",
+      "lat": 0,
+      "lon": -30,
+      "source": "ocean-sweep"
+    },
+    {
+      "id": "pole-north",
+      "category": "pole",
+      "label": "North Pole",
+      "lat": 90,
+      "lon": 0,
+      "source": "edge"
+    },
+    {
+      "id": "pole-south",
+      "category": "pole",
+      "label": "South Pole",
+      "lat": -90,
+      "lon": 0,
+      "source": "edge"
+    }
+  ]
+}
