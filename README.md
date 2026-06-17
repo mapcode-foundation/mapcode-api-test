@@ -17,8 +17,16 @@ TOMTOM_API_KEY=your-key
 
 ## Run
 
+Run the local coordinator. After `npm run build`, it also serves the browser dashboard from `dist/ui`.
+
 ```bash
 npm run dev
+```
+
+For UI-only development with Vite:
+
+```bash
+npm run dev:ui
 ```
 
 ## Verify

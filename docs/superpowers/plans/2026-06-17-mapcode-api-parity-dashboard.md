@@ -64,6 +64,7 @@ Create or modify these paths:
 - Create: `playwright.config.ts`
 - Create: `src/shared/types.ts`
 - Create: `src/coordinator/index.ts`
+- Create: `.env.example`
 - Create: `src/ui/index.html`
 - Create: `src/ui/main.tsx`
 - Create: `src/ui/App.tsx`
@@ -285,14 +286,30 @@ export type RunnerEvent =
 Create `src/coordinator/index.ts`:
 
 ```ts
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import express from "express";
 
 const app = express();
 const portArgIndex = process.argv.indexOf("--port");
 const port = portArgIndex >= 0 ? Number(process.argv[portArgIndex + 1]) : 4173;
+const staticDir = resolve("dist/ui");
+const indexHtml = resolve(staticDir, "index.html");
+
+if (existsSync(staticDir)) {
+  app.use(express.static(staticDir));
+}
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get("*", (_req, res, next) => {
+  if (existsSync(indexHtml)) {
+    res.sendFile(indexHtml);
+    return;
+  }
+  next();
 });
 
 app.listen(port, "127.0.0.1", () => {
@@ -370,6 +387,12 @@ body {
 }
 ```
 
+Create `.env.example`:
+
+```dotenv
+TOMTOM_API_KEY=
+```
+
 - [ ] **Step 4: Update README with setup commands**
 
 Modify `README.md`:
@@ -394,8 +417,16 @@ TOMTOM_API_KEY=your-key
 
 ## Run
 
+Run the local coordinator. After `npm run build`, it also serves the browser dashboard from `dist/ui`.
+
 ```bash
 npm run dev
+```
+
+For UI-only development with Vite:
+
+```bash
+npm run dev:ui
 ```
 
 ## Verify
@@ -430,7 +461,7 @@ Expected: TypeScript passes and the scaffold test passes.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add package.json package-lock.json tsconfig.json vite.config.ts vitest.config.ts playwright.config.ts src README.md test/scaffold.test.ts
+git add .env.example package.json package-lock.json tsconfig.json vite.config.ts vitest.config.ts playwright.config.ts src README.md test/scaffold.test.ts
 git commit -m "feat: scaffold parity dashboard app"
 ```
 
