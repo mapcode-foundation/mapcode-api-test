@@ -35,7 +35,7 @@ const discrepancy: Discrepancy = {
     status: 200,
     contentType: "application/json",
     body: "secret TOMTOM_API_KEY=abc",
-    canonical: { territory: "NLD" }
+    canonical: { territory: "NLD", TOMTOM_API_KEY: "json-secret-value" }
   },
   typescript: {
     service: "typescript",
@@ -58,10 +58,14 @@ describe("writeReports", () => {
     });
     const md = await readFile(result.markdownPath, "utf8");
     const json = await readFile(result.jsonPath, "utf8");
+    const parsed = JSON.parse(json);
 
     expect(md).toContain("payload differs");
     expect(json).toContain("$.mapcodes[0].territory");
     expect(md).not.toContain("abc");
     expect(json).not.toContain("abc");
+    expect(json).not.toContain("json-secret-value");
+    expect(parsed.discrepancies[0].java.canonical.TOMTOM_API_KEY).toBe("[REDACTED]");
+    expect(parsed.discrepancies[0].java.canonical.territory).toBe("NLD");
   });
 });

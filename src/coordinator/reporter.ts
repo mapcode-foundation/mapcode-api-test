@@ -12,8 +12,9 @@ export interface ReportInput {
 export async function writeReports(input: ReportInput): Promise<{ markdownPath: string; jsonPath: string }> {
   await mkdir(input.outputDir, { recursive: true });
 
-  const markdownPath = join(input.outputDir, `${input.summary.runId}.md`);
-  const jsonPath = join(input.outputDir, `${input.summary.runId}.json`);
+  const fileStem = safeFileStem(input.summary.runId);
+  const markdownPath = join(input.outputDir, `${fileStem}.md`);
+  const jsonPath = join(input.outputDir, `${fileStem}.json`);
   const redacted = redact(input);
 
   await writeFile(markdownPath, renderMarkdown(redacted), "utf8");
@@ -100,11 +101,32 @@ function formatJson(value: unknown): string {
 }
 
 function redact(input: ReportInput): ReportInput {
-  return JSON.parse(redactSecrets(JSON.stringify(input))) as ReportInput;
+  return redactValue(input) as ReportInput;
+}
+
+function redactValue(value: unknown): unknown {
+  if (typeof value === "string") return redactSecrets(value);
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      out[key] = isSecretKey(key) ? "[REDACTED]" : redactValue(child);
+    }
+    return out;
+  }
+  return value;
 }
 
 function redactSecrets(value: string): string {
   return value
     .replace(/TOMTOM_API_KEY\s*[:=]\s*[^"'\\\s,}]+/gi, "TOMTOM_API_KEY=[REDACTED]")
     .replace(/tomtom[^"'\\\s,}]{8,}/gi, "[REDACTED]");
+}
+
+function isSecretKey(key: string): boolean {
+  return key.toUpperCase() === "TOMTOM_API_KEY";
+}
+
+function safeFileStem(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\.*/, "") || "report";
 }
