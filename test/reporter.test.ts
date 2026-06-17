@@ -41,9 +41,10 @@ const discrepancy: Discrepancy = {
     service: "typescript",
     status: 200,
     contentType: "application/json",
-    body: "secret TOMTOM_API_KEY=abc",
+    body: '{"TOMTOM_API_KEY":"body-secret-value","territory":"AAA"}',
     canonical: { territory: "AAA" }
   },
+  logExcerpt: ['startup {"TOMTOM_API_KEY":"log-secret-value"}'],
   replay: "GET /mapcode/codes/52,5"
 };
 
@@ -65,7 +66,10 @@ describe("writeReports", () => {
     expect(md).not.toContain("abc");
     expect(json).not.toContain("abc");
     expect(json).not.toContain("json-secret-value");
+    expect(json).not.toContain("body-secret-value");
+    expect(json).not.toContain("log-secret-value");
     expect(parsed.discrepancies[0].java.canonical.TOMTOM_API_KEY).toBe("[REDACTED]");
     expect(parsed.discrepancies[0].java.canonical.territory).toBe("NLD");
+    expect(parsed.discrepancies[0].typescript.body).toContain('"TOMTOM_API_KEY":"[REDACTED]"');
   });
 });

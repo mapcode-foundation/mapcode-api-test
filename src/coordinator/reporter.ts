@@ -119,8 +119,9 @@ function redactValue(value: unknown): unknown {
 
 function redactSecrets(value: string): string {
   return value
+    .replace(/(TOMTOM_API_KEY\s*["']?\s*:\s*["'])[^"']+(["'])/gi, "$1[REDACTED]$2")
     .replace(/TOMTOM_API_KEY\s*[:=]\s*[^"'\\\s,}]+/gi, "TOMTOM_API_KEY=[REDACTED]")
-    .replace(/tomtom[^"'\\\s,}]{8,}/gi, "[REDACTED]");
+    .replace(/tomtom(?!_API_KEY)[^"'\\\s,}]{8,}/gi, "[REDACTED]");
 }
 
 function isSecretKey(key: string): boolean {
