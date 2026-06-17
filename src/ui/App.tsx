@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { getCases, getConfig, getFixtures } from "./api";
+import { connectEvents, getCases, getConfig, getFixtures, pauseRun, resumeRun, saveReport, startRun, stopRun } from "./api";
 import { CoverageMap } from "./components/CoverageMap";
 import { DiscrepancyDetail } from "./components/DiscrepancyDetail";
 import { DiscrepancyList } from "./components/DiscrepancyList";
 import { RunSummary as RunSummaryView } from "./components/RunSummary";
 import { ServicePane } from "./components/ServicePane";
 import { TomTomKeyDialog } from "./components/TomTomKeyDialog";
-import type { Discrepancy, FixturePoint, PointState, RequestCase, RunProfileName, RunSummary } from "../shared/types";
+import type {
+  Discrepancy,
+  FixturePoint,
+  PointState,
+  RequestCase,
+  RunnerEvent,
+  RunProfileName,
+  RunSummary,
+  ServiceResponse
+} from "../shared/types";
 
 const profiles: RunProfileName[] = ["Fast", "Deep", "Custom"];
 
@@ -22,19 +31,28 @@ const initialSummary: RunSummary = {
 };
 
 type RunState = "idle" | "running" | "paused" | "stopped";
+type ReportPaths = { markdownPath: string; jsonPath: string };
+
+function queuedFixtureStates(points: FixturePoint[]): Record<string, PointState> {
+  return Object.fromEntries(points.map((point) => [point.id, "queued" as PointState]));
+}
 
 export function App() {
   const [profile, setProfile] = useState<RunProfileName>("Fast");
   const [summary, setSummary] = useState<RunSummary>(initialSummary);
   const [fixtures, setFixtures] = useState<FixturePoint[]>([]);
   const [cases, setCases] = useState<RequestCase[]>([]);
+  const [fixtureStates, setFixtureStates] = useState<Record<string, PointState>>({});
+  const [currentRequest, setCurrentRequest] = useState<RequestCase | undefined>();
+  const [javaResponse, setJavaResponse] = useState<ServiceResponse | undefined>();
+  const [typescriptResponse, setTypeScriptResponse] = useState<ServiceResponse | undefined>();
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [selectedDiscrepancy, setSelectedDiscrepancy] = useState<Discrepancy | undefined>();
   const [hasTomTomApiKey, setHasTomTomApiKey] = useState<boolean | undefined>();
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [runtimeTomTomApiKey, setRuntimeTomTomApiKey] = useState<string | undefined>();
   const [runState, setRunState] = useState<RunState>("idle");
-  const [reportSaved, setReportSaved] = useState(false);
+  const [reportPaths, setReportPaths] = useState<ReportPaths | undefined>();
   const [loadMessage, setLoadMessage] = useState("Loading coordinator state");
 
   useEffect(() => {
@@ -45,6 +63,7 @@ export function App() {
         if (cancelled) return;
         setHasTomTomApiKey(config.hasTomTomApiKey);
         setFixtures(fixtureSet.points);
+        setFixtureStates(queuedFixtureStates(fixtureSet.points));
         setSummary((current) => ({ ...current, seed: fixtureSet.seed }));
         setLoadMessage(`${fixtureSet.points.length} fixtures pinned`);
         if (!config.hasTomTomApiKey) setIsMapModalOpen(true);
@@ -68,6 +87,10 @@ export function App() {
         setCases(nextCases);
         setDiscrepancies([]);
         setSelectedDiscrepancy(undefined);
+        setCurrentRequest(undefined);
+        setJavaResponse(undefined);
+        setTypeScriptResponse(undefined);
+        setFixtureStates(queuedFixtureStates(fixtures));
         setSummary((current) => ({
           ...current,
           profile,
@@ -77,7 +100,7 @@ export function App() {
           roundTrips: 0,
           maxDriftMeters: 0
         }));
-        setReportSaved(false);
+        setReportPaths(undefined);
       })
       .catch(() => {
         if (cancelled) return;
@@ -90,11 +113,9 @@ export function App() {
     };
   }, [profile]);
 
-  const currentCase = useMemo(() => cases[0], [cases]);
-  const fixtureStates = useMemo<Record<string, PointState>>(
-    () => Object.fromEntries(fixtures.map((point) => [point.id, "queued" as PointState])),
-    [fixtures]
-  );
+  useEffect(() => connectEvents(handleRunnerEvent), []);
+
+  const currentCase = useMemo(() => currentRequest ?? cases[0], [cases, currentRequest]);
   const progress = useMemo(() => {
     if (summary.totalCases === 0) return 0;
     return Math.round((summary.completedCases / summary.totalCases) * 100);
@@ -111,6 +132,87 @@ export function App() {
           ? "map key on server"
           : "map key missing";
   const showTomTomModal = isMapModalOpen && !hasBrowserTomTomKey;
+
+  function handleRunnerEvent(event: unknown): void {
+    if (!isRunnerEvent(event)) return;
+
+    switch (event.type) {
+      case "run-summary":
+        setSummary(event.summary);
+        break;
+      case "point-state":
+        setFixtureStates((current) => ({ ...current, [event.fixtureId]: event.state }));
+        break;
+      case "current-case":
+        setCurrentRequest(event.request);
+        setJavaResponse(event.java);
+        setTypeScriptResponse(event.typescript);
+        break;
+      case "discrepancy":
+        setDiscrepancies((current) =>
+          current.some((item) => item.id === event.discrepancy.id) ? current : [...current, event.discrepancy]
+        );
+        setSelectedDiscrepancy((current) => current ?? event.discrepancy);
+        break;
+      case "run-complete":
+        setSummary(event.summary);
+        setRunState("stopped");
+        break;
+      case "service-log":
+        break;
+    }
+  }
+
+  async function handleStart(): Promise<void> {
+    setRunState("running");
+    setDiscrepancies([]);
+    setSelectedDiscrepancy(undefined);
+    setCurrentRequest(undefined);
+    setJavaResponse(undefined);
+    setTypeScriptResponse(undefined);
+    setFixtureStates(queuedFixtureStates(fixtures));
+    setReportPaths(undefined);
+
+    try {
+      await startRun(profile);
+    } catch {
+      setRunState("stopped");
+      setLoadMessage("Run start failed");
+    }
+  }
+
+  async function handlePauseResume(): Promise<void> {
+    try {
+      if (runState === "paused") {
+        setRunState("running");
+        await resumeRun();
+        return;
+      }
+
+      setRunState("paused");
+      await pauseRun();
+    } catch {
+      setRunState("stopped");
+      setLoadMessage("Run control failed");
+    }
+  }
+
+  async function handleStop(): Promise<void> {
+    try {
+      setRunState("stopped");
+      await stopRun();
+    } catch {
+      setLoadMessage("Run control failed");
+    }
+  }
+
+  async function handleSaveReport(): Promise<void> {
+    try {
+      setReportPaths(await saveReport());
+    } catch {
+      setLoadMessage("Report save failed");
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -171,28 +273,28 @@ export function App() {
         </div>
 
         <div className="run-controls">
-          <button type="button" className="primary" onClick={() => setRunState("running")}>
+          <button type="button" className="primary" onClick={() => void handleStart()}>
             Start
           </button>
           <button
             type="button"
             className="secondary"
             disabled={runState === "idle" || runState === "stopped"}
-            onClick={() => setRunState((current) => (current === "paused" ? "running" : "paused"))}
+            onClick={() => void handlePauseResume()}
           >
-            Pause
+            {runState === "paused" ? "Resume" : "Pause"}
           </button>
           <button type="button" className="secondary" onClick={() => setIsMapModalOpen(true)}>
             Preview map
           </button>
-          <button type="button" className="secondary" onClick={() => setReportSaved(true)}>
+          <button type="button" className="secondary" onClick={() => void handleSaveReport()}>
             Save report
           </button>
           <button
             type="button"
             className="danger"
             disabled={runState === "idle" || runState === "stopped"}
-            onClick={() => setRunState("stopped")}
+            onClick={() => void handleStop()}
           >
             Stop
           </button>
@@ -218,15 +320,19 @@ export function App() {
               <span className="catalog-count">{cases.length} queued requests</span>
             </div>
             <div className="service-grid">
-              <ServicePane title="Java Leading API" request={currentCase} />
-              <ServicePane title="TypeScript Port" request={currentCase} />
+              <ServicePane title="Java Leading API" request={currentCase} response={javaResponse} />
+              <ServicePane title="TypeScript Port" request={currentCase} response={typescriptResponse} />
             </div>
           </div>
 
           <aside className="inspector-stack" aria-label="Failure inspector">
             <DiscrepancyList items={discrepancies} selectedId={selectedDiscrepancyId} onSelect={setSelectedDiscrepancy} />
             <DiscrepancyDetail item={selectedDiscrepancy} />
-            {reportSaved ? <div className="save-note">Report snapshot marked for export</div> : null}
+            {reportPaths ? (
+              <div className="save-note">
+                Saved {reportPaths.markdownPath} and {reportPaths.jsonPath}
+              </div>
+            ) : null}
           </aside>
         </section>
       </main>
@@ -243,4 +349,8 @@ export function App() {
       ) : null}
     </div>
   );
+}
+
+function isRunnerEvent(event: unknown): event is RunnerEvent {
+  return Boolean(event && typeof event === "object" && "type" in event);
 }

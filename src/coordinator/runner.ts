@@ -1,11 +1,13 @@
 import { compareResponses } from "./comparator";
 import { fetchService } from "./http-client";
-import type { Discrepancy, RequestCase, RunnerEvent, RunSummary, ServiceResponse } from "../shared/types";
+import type { Discrepancy, RequestCase, RunnerEvent, RunProfileName, RunSummary, ServiceResponse } from "../shared/types";
 
 export interface RunnerInput {
   javaBaseUrl: string;
   typescriptBaseUrl: string;
   cases: RequestCase[];
+  profile?: RunProfileName;
+  seed?: number;
   fetchPair?: (request: RequestCase) => Promise<{ java: ServiceResponse; typescript: ServiceResponse }>;
 }
 
@@ -19,8 +21,8 @@ export class Runner {
   constructor(private readonly input: RunnerInput) {
     this.summary = {
       runId: `run-${Date.now()}`,
-      profile: "Fast",
-      seed: 20260617,
+      profile: input.profile ?? "Fast",
+      seed: input.seed ?? 20260617,
       totalCases: input.cases.length,
       completedCases: 0,
       failures: 0,

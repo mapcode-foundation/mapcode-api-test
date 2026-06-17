@@ -29,6 +29,24 @@ For UI-only development with Vite:
 npm run dev:ui
 ```
 
+## Local services
+
+Default managed mode expects:
+
+- Java service: `../mapcode-rest-service`
+- TypeScript service: `../mapcode-rest-service-ts`
+
+Attached mode can be configured from the dashboard with Java and TypeScript base URLs.
+
+## Reports
+
+Reports are written under `reports/` and ignored by git:
+
+- Markdown report output, such as `report.md`, for human and AI-agent handoff.
+- JSON report output, such as `report.json`, for machine-readable discrepancy evidence.
+
+The dashboard displays the exact saved paths returned by the coordinator. Secrets, including `TOMTOM_API_KEY`, are redacted.
+
 ## Verify
 
 ```bash
