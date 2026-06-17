@@ -515,7 +515,7 @@ const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@",
   textNodeName: "#text",
-  parseTagValue: true,
+  parseTagValue: false,
   trimValues: true,
   isArray: (_name, jpath) => jpath.endsWith(".mapcode")
 });
@@ -631,14 +631,14 @@ Create `src/coordinator/comparator.ts`:
 
 ```ts
 import { distanceMeters, type LatLon } from "../shared/distance";
-import type { CanonicalValue, SemanticDiff, ServiceResponse } from "../shared/types";
+import type { ApiFormat, CanonicalValue, RequestCase, SemanticDiff, ServiceResponse } from "../shared/types";
 
-export function compareResponses(java: ServiceResponse, typescript: ServiceResponse, path: string): SemanticDiff[] {
+export function compareResponses(java: ServiceResponse, typescript: ServiceResponse, path: string, options: { format?: ApiFormat; expectation?: RequestCase["expectation"] } = {}): SemanticDiff[] {
   const diffs: SemanticDiff[] = [];
   if (java.status !== typescript.status) {
     diffs.push({ path: "$.status", expected: java.status, actual: typescript.status, message: "Expected HTTP status codes to match" });
   }
-  if (path === "/mapcode/version") {
+  if (options.expectation === "version-shape" || path === "/mapcode/version" || path === "/mapcode/json/version" || path === "/mapcode/xml/version") {
     return diffs.concat(compareVersionShape(java.canonical, typescript.canonical));
   }
   return diffs.concat(compareCanonical(java.canonical ?? null, typescript.canonical ?? null));
@@ -1253,7 +1253,7 @@ export class Runner {
       if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "active" });
       const { java, typescript } = await this.fetchPair(request);
       this.emit({ type: "current-case", request, java, typescript });
-      const diffs = compareResponses(java, typescript, request.path);
+      const diffs = compareResponses(java, typescript, request.path, { format: request.format, expectation: request.expectation });
       if (diffs.length > 0) {
         this.summary.failures += 1;
         const discrepancy: Discrepancy = {

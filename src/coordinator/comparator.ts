@@ -1,7 +1,12 @@
 import { distanceMeters, type LatLon } from "../shared/distance";
-import type { CanonicalValue, SemanticDiff, ServiceResponse } from "../shared/types";
+import type { ApiFormat, CanonicalValue, RequestCase, SemanticDiff, ServiceResponse } from "../shared/types";
 
-export function compareResponses(java: ServiceResponse, typescript: ServiceResponse, path: string): SemanticDiff[] {
+export function compareResponses(
+  java: ServiceResponse,
+  typescript: ServiceResponse,
+  path: string,
+  options: { format?: ApiFormat; expectation?: RequestCase["expectation"] } = {}
+): SemanticDiff[] {
   const diffs: SemanticDiff[] = [];
 
   if (java.status !== typescript.status) {
@@ -13,7 +18,11 @@ export function compareResponses(java: ServiceResponse, typescript: ServiceRespo
     });
   }
 
-  if (path === "/mapcode/version") {
+  if (options.format) {
+    diffs.push(...compareContentTypes(java, typescript, options.format));
+  }
+
+  if (options.expectation === "version-shape" || isVersionEndpoint(path)) {
     return diffs.concat(compareVersionShape(java.canonical, typescript.canonical));
   }
 
@@ -68,6 +77,42 @@ function compareVersionShape(expected: CanonicalValue | undefined, actual: Canon
       message: "Expected both version responses to contain a version field"
     }
   ];
+}
+
+function compareContentTypes(java: ServiceResponse, typescript: ServiceResponse, format: ApiFormat): SemanticDiff[] {
+  const diffs: SemanticDiff[] = [];
+  if (!contentTypeMatches(java.contentType, format)) {
+    diffs.push({
+      path: "$.java.contentType",
+      expected: expectedContentType(format),
+      actual: java.contentType,
+      message: "Expected Java response content type to match requested format"
+    });
+  }
+  if (!contentTypeMatches(typescript.contentType, format)) {
+    diffs.push({
+      path: "$.typescript.contentType",
+      expected: expectedContentType(format),
+      actual: typescript.contentType,
+      message: "Expected TypeScript response content type to match requested format"
+    });
+  }
+  return diffs;
+}
+
+function contentTypeMatches(contentType: string, format: ApiFormat): boolean {
+  const normalized = contentType.toLowerCase();
+  return format === "json"
+    ? normalized.includes("application/json") || normalized.includes("+json")
+    : normalized.includes("application/xml") || normalized.includes("text/xml") || normalized.includes("+xml");
+}
+
+function expectedContentType(format: ApiFormat): string {
+  return format === "json" ? "application/json" : "application/xml";
+}
+
+function isVersionEndpoint(path: string): boolean {
+  return path === "/mapcode/version" || path === "/mapcode/json/version" || path === "/mapcode/xml/version";
 }
 
 function isRecord(value: unknown): value is Record<string, CanonicalValue> {

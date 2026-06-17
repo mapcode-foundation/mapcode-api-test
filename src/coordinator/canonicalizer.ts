@@ -6,7 +6,7 @@ const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@",
   textNodeName: "#text",
-  parseTagValue: true,
+  parseTagValue: false,
   trimValues: true,
   isArray: (name, jpath) => name === "mapcode" && jpath === "mapcodes.mapcode"
 });

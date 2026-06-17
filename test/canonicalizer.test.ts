@@ -22,4 +22,16 @@ describe("canonicalizeBody", () => {
   it("returns null for empty response bodies", () => {
     expect(canonicalizeBody("  ", "json")).toBeNull();
   });
+
+  it("preserves XML scalar text instead of coercing values", () => {
+    const xml = "<root><code>001</code><flag>false</flag><count>12</count></root>";
+
+    expect(canonicalizeBody(xml, "xml")).toEqual({
+      root: {
+        code: "001",
+        flag: "false",
+        count: "12"
+      }
+    });
+  });
 });
