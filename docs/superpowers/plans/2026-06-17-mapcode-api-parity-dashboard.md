@@ -638,6 +638,9 @@ export function compareResponses(java: ServiceResponse, typescript: ServiceRespo
   if (java.status !== typescript.status) {
     diffs.push({ path: "$.status", expected: java.status, actual: typescript.status, message: "Expected HTTP status codes to match" });
   }
+  if (options.format) {
+    diffs.push(...compareContentTypes(java, typescript, options.format));
+  }
   if (options.expectation === "version-shape" || path === "/mapcode/version" || path === "/mapcode/json/version" || path === "/mapcode/xml/version") {
     return diffs.concat(compareVersionShape(java.canonical, typescript.canonical));
   }
@@ -676,6 +679,28 @@ export function roundTripWithinTolerance(original: LatLon, javaDecoded: LatLon, 
 function compareVersionShape(expected: CanonicalValue | undefined, actual: CanonicalValue | undefined): SemanticDiff[] {
   if (isRecord(expected) && isRecord(actual) && "version" in expected && "version" in actual) return [];
   return [{ path: "$.version", expected, actual, message: "Expected both version responses to contain a version field" }];
+}
+
+function compareContentTypes(java: ServiceResponse, typescript: ServiceResponse, format: ApiFormat): SemanticDiff[] {
+  const diffs: SemanticDiff[] = [];
+  if (!contentTypeMatches(java.contentType, format)) {
+    diffs.push({ path: "$.java.contentType", expected: expectedContentType(format), actual: java.contentType, message: "Expected Java response content type to match requested format" });
+  }
+  if (!contentTypeMatches(typescript.contentType, format)) {
+    diffs.push({ path: "$.typescript.contentType", expected: expectedContentType(format), actual: typescript.contentType, message: "Expected TypeScript response content type to match requested format" });
+  }
+  return diffs;
+}
+
+function contentTypeMatches(contentType: string, format: ApiFormat): boolean {
+  const normalized = contentType.toLowerCase();
+  return format === "json"
+    ? normalized.includes("application/json") || normalized.includes("+json")
+    : normalized.includes("application/xml") || normalized.includes("text/xml") || normalized.includes("+xml");
+}
+
+function expectedContentType(format: ApiFormat): string {
+  return format === "json" ? "application/json" : "application/xml";
 }
 
 function isRecord(value: unknown): value is Record<string, CanonicalValue> {
