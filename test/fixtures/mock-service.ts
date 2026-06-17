@@ -1,8 +1,10 @@
 import express from "express";
+import type { IncomingHttpHeaders } from "node:http";
 import type { Server } from "node:http";
 
 export interface MockService {
   baseUrl: string;
+  requests: Array<{ path: string; headers: IncomingHttpHeaders }>;
   close: () => Promise<void>;
 }
 
@@ -10,9 +12,11 @@ export async function startMockService(
   routes: Record<string, { status: number; body: string; contentType?: string }>
 ): Promise<MockService> {
   const app = express();
+  const requests: Array<{ path: string; headers: IncomingHttpHeaders }> = [];
 
   for (const [path, response] of Object.entries(routes)) {
-    app.get(path, (_req, res) => {
+    app.get(path, (req, res) => {
+      requests.push({ path: req.path, headers: req.headers });
       res.status(response.status).type(response.contentType ?? "application/json").send(response.body);
     });
   }
@@ -28,6 +32,7 @@ export async function startMockService(
 
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
+    requests,
     close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
   };
 }

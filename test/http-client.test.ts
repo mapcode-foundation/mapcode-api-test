@@ -16,6 +16,7 @@ describe("fetchService", () => {
 
       expect(response.status).toBe(200);
       expect(response.canonical).toEqual({ version: "1" });
+      expect(service.requests[0]?.headers.accept).toBe("application/json");
     } finally {
       await service.close();
     }

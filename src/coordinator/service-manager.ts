@@ -61,7 +61,7 @@ export function createManagedServiceManager(input: {
   };
 }
 
-async function isReady(baseUrl: string): Promise<boolean> {
+export async function isReady(baseUrl: string): Promise<boolean> {
   try {
     const response = await fetch(new URL("/mapcode/status", baseUrl));
     return response.status === 200;
