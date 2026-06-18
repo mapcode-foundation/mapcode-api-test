@@ -1,6 +1,8 @@
 import { distanceMeters, type LatLon } from "../shared/distance";
 import type { ApiFormat, CanonicalValue, RequestCase, SemanticDiff, ServiceResponse } from "../shared/types";
 
+const roundTripCoordinateToleranceDegrees = 0.00001;
+
 export function compareResponses(
   java: ServiceResponse,
   typescript: ServiceResponse,
@@ -26,11 +28,25 @@ export function compareResponses(
     return diffs.concat(compareVersionShape(java.canonical, typescript.canonical));
   }
 
-  return diffs.concat(compareCanonical(java.canonical ?? null, typescript.canonical ?? null));
+  return diffs.concat(
+    compareCanonical(java.canonical ?? null, typescript.canonical ?? null, "$", {
+      coordinateToleranceDegrees:
+        options.expectation === "roundtrip" ? roundTripCoordinateToleranceDegrees : undefined
+    })
+  );
 }
 
-export function compareCanonical(expected: CanonicalValue | undefined, actual: CanonicalValue | undefined, path = "$"): SemanticDiff[] {
+export function compareCanonical(
+  expected: CanonicalValue | undefined,
+  actual: CanonicalValue | undefined,
+  path = "$",
+  options: { coordinateToleranceDegrees?: number } = {}
+): SemanticDiff[] {
   if (JSON.stringify(expected) === JSON.stringify(actual)) return [];
+  if (isCoordinatePath(path) && typeof expected === "number" && typeof actual === "number") {
+    const tolerance = options.coordinateToleranceDegrees;
+    if (tolerance !== undefined && Math.abs(expected - actual) <= tolerance + 1e-12) return [];
+  }
   if (isVolatilePresenceOnlyPath(path)) {
     if (expected !== null && expected !== undefined && actual !== null && actual !== undefined) return [];
     if (expected !== null && expected !== undefined) {
@@ -49,7 +65,7 @@ export function compareCanonical(expected: CanonicalValue | undefined, actual: C
     const diffs: SemanticDiff[] = [];
     const max = Math.max(expected.length, actual.length);
     for (let i = 0; i < max; i += 1) {
-      diffs.push(...compareCanonical(expected[i], actual[i], `${path}[${i}]`));
+      diffs.push(...compareCanonical(expected[i], actual[i], `${path}[${i}]`, options));
     }
     return diffs;
   }
@@ -58,7 +74,7 @@ export function compareCanonical(expected: CanonicalValue | undefined, actual: C
     const diffs: SemanticDiff[] = [];
     const keys = [...new Set([...Object.keys(expected), ...Object.keys(actual)])].sort();
     for (const key of keys) {
-      diffs.push(...compareCanonical(expected[key], actual[key], `${path}.${key}`));
+      diffs.push(...compareCanonical(expected[key], actual[key], `${path}.${key}`, options));
     }
     return diffs;
   }
@@ -134,6 +150,10 @@ function isStatusEndpoint(path: string): boolean {
 
 function isVolatilePresenceOnlyPath(path: string): boolean {
   return path === "$.time" || path === "$.reference";
+}
+
+function isCoordinatePath(path: string): boolean {
+  return path.endsWith(".latDeg") || path.endsWith(".lonDeg") || path.endsWith(".lat") || path.endsWith(".lon");
 }
 
 function isRecord(value: unknown): value is Record<string, CanonicalValue> {

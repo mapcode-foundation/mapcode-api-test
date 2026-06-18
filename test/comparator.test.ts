@@ -125,6 +125,28 @@ describe("compareResponses", () => {
 
     expect(diffs).toEqual([]);
   });
+
+  it("allows small lat/lon drift for roundtrip coordinate responses", () => {
+    const diffs = compareResponses(
+      response("java", { latDeg: 52.376514, lonDeg: 4.908543 }),
+      response("typescript", { latDeg: 52.376524, lonDeg: 4.908533 }),
+      "/mapcode/coords/ABC.123",
+      { format: "json", expectation: "roundtrip" }
+    );
+
+    expect(diffs).toEqual([]);
+  });
+
+  it("keeps lat/lon exact for non-roundtrip parity responses", () => {
+    const diffs = compareResponses(
+      response("java", { latDeg: 52.376514, lonDeg: 4.908543 }),
+      response("typescript", { latDeg: 52.376524, lonDeg: 4.908533 }),
+      "/mapcode/coords/ABC.123",
+      { format: "json", expectation: "parity" }
+    );
+
+    expect(diffs.map((diff) => diff.path)).toEqual(["$.latDeg", "$.lonDeg"]);
+  });
 });
 
 describe("roundTripWithinTolerance", () => {
