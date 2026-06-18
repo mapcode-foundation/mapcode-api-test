@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/ui/App";
 import { CoverageMap } from "../src/ui/components/CoverageMap";
@@ -76,6 +77,15 @@ describe("App shell", () => {
 
     expect(markup).toMatch(/<button type="button" class="primary"[^>]*disabled=""/);
     expect(markup).toContain(">Start</button>");
+  });
+
+  it("uses a dropdown for request delay", () => {
+    const markup = renderToStaticMarkup(createElement(App));
+
+    expect(markup).toContain('<select id="request-delay"');
+    expect(markup).toContain('<option value="0" selected="">full speed</option>');
+    expect(markup).toContain('<option value="5">5s</option>');
+    expect(markup).not.toContain('type="range"');
   });
 });
 
@@ -163,6 +173,12 @@ describe("CoverageMap", () => {
     expect(markup).not.toContain("queued global raster points are hidden on the map");
     expect(markup).toContain('class="point raster-point passed"');
     expect(markup).toContain('title="Global raster 1/1"');
+  });
+
+  it("keeps raster result dots from intercepting map gestures", () => {
+    const styles = readFileSync("src/ui/styles.css", "utf8");
+
+    expect(styles).toMatch(/\.point\.raster-point\s*\{[^}]*pointer-events:\s*none;/s);
   });
 
   it("adds an aggregate row for non-location requests in the fixture table", () => {

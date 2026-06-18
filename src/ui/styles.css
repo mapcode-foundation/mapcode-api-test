@@ -325,10 +325,10 @@ input {
   font-weight: 800;
 }
 
-.speed-control input {
+.speed-control select {
   width: 100%;
   min-height: auto;
-  padding: 0;
+  padding: 0 8px;
 }
 
 .speed-control b {
@@ -440,6 +440,7 @@ input {
   border-width: 1px;
   margin: -2.5px 0 0 -2.5px;
   box-shadow: 0 1px 3px rgba(22, 31, 43, 0.18);
+  pointer-events: none;
 }
 
 .point.queued,

@@ -35,6 +35,7 @@ test("dashboard shows profile, map preview, and report controls", async ({ page 
   await expect(page.getByRole("option", { name: "Custom" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Preview map" })).toHaveCount(0);
   await expect(page.getByLabel("Delay")).toHaveValue("0");
+  await expect(page.locator("#request-delay option[value='2.5']")).toHaveText("2.5s");
   await expect(page.getByRole("button", { name: "Report", exact: true })).toBeVisible();
   const apiControlOrder = await page.locator(".api-controls").evaluate((node) =>
     Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
@@ -96,8 +97,8 @@ test("dashboard sends the selected request delay when starting a run", async ({ 
   });
 
   await page.goto("/");
-  await page.getByLabel("Delay").fill("2.5");
-  await expect(page.getByText("2.5s")).toBeVisible();
+  await page.getByLabel("Delay").selectOption("2.5");
+  await expect(page.locator(".speed-control b")).toHaveText("2.5s");
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByText("1 queued requests")).toBeVisible();
 
@@ -116,7 +117,7 @@ test("dashboard starts at full speed by default", async ({ page }) => {
   });
 
   await page.goto("/");
-  await expect(page.getByText("full speed")).toBeVisible();
+  await expect(page.locator(".speed-control b")).toHaveText("full speed");
   await page.getByRole("button", { name: "Start", exact: true }).click();
 
   expect(startPayload).toMatchObject({ profile: "Fast", requestDelaySeconds: 0 });
@@ -165,8 +166,8 @@ test("dashboard applies speed changes during a run with a pause and resume cycle
 
   await page.goto("/");
   await page.getByRole("button", { name: "Start", exact: true }).click();
-  await page.getByLabel("Delay").fill("3");
-  await expect(page.getByText("3s")).toBeVisible();
+  await page.getByLabel("Delay").selectOption("3");
+  await expect(page.locator(".speed-control b")).toHaveText("3s");
 
   await expect.poll(() => calls).toEqual(["start", "pause", "delay", "resume"]);
   expect(delayPayload).toMatchObject({ requestDelaySeconds: 3 });
@@ -202,7 +203,7 @@ test("dashboard stop wins over an in-flight speed resume cycle", async ({ page }
 
   await page.goto("/");
   await page.getByRole("button", { name: "Start", exact: true }).click();
-  await page.getByLabel("Delay").fill("3");
+  await page.getByLabel("Delay").selectOption("3");
   await expect(page.locator(".progress-copy span")).toContainText("paused");
 
   await page.getByRole("button", { name: "Stop", exact: true }).click();

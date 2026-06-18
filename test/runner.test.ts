@@ -150,6 +150,71 @@ describe("Runner", () => {
     expect(events).not.toContain("discrepancy");
   });
 
+  it("aborts an in-flight request when stopped", async () => {
+    let requestSignal: AbortSignal | undefined;
+    let resolveStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const runner = new Runner({
+      javaBaseUrl: "http://java.test",
+      typescriptBaseUrl: "http://ts.test",
+      cases: [request],
+      fetchPair: async (_request, signal) => {
+        requestSignal = signal;
+        resolveStarted();
+        return new Promise((resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          setTimeout(() => resolve({ java: response("java", "1"), typescript: response("typescript", "1") }), 1_000);
+        });
+      }
+    });
+
+    const runPromise = runner.start();
+    await started;
+    runner.stop();
+
+    await expect(Promise.race([runPromise.then(() => "done"), new Promise((resolve) => setTimeout(() => resolve("timeout"), 50))])).resolves.toBe(
+      "done"
+    );
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("keeps failed fixture state after a later request for the same fixture passes", async () => {
+    const firstRequest: RequestCase = {
+      ...request,
+      id: "fixture-case-1",
+      fixtureId: "fixture-1",
+      path: "/mapcode/codes/52.1,4.3",
+      expectation: "parity"
+    };
+    const secondRequest: RequestCase = {
+      ...request,
+      id: "fixture-case-2",
+      fixtureId: "fixture-1",
+      path: "/mapcode/codes/52.1,4.3",
+      expectation: "parity"
+    };
+    const pointStates: string[] = [];
+    const runner = new Runner({
+      javaBaseUrl: "http://java.test",
+      typescriptBaseUrl: "http://ts.test",
+      cases: [firstRequest, secondRequest],
+      fetchPair: async (nextRequest) => ({
+        java: response("java", nextRequest.id === "fixture-case-1" ? "one" : "same"),
+        typescript: response("typescript", nextRequest.id === "fixture-case-1" ? "two" : "same")
+      })
+    });
+
+    runner.onEvent((event) => {
+      if (event.type === "point-state") pointStates.push(event.state);
+    });
+
+    await runner.start();
+
+    expect(pointStates).toEqual(["active", "failed", "active", "failed"]);
+  });
+
   it("waits between requests when a request delay is configured", async () => {
     const sleeps: number[] = [];
     const fetches: string[] = [];

@@ -1,6 +1,6 @@
 import { compareResponses } from "./comparator";
 import { fetchService } from "./http-client";
-import type { Discrepancy, RequestCase, RunnerEvent, RunProfileName, RunSummary, ServiceResponse } from "../shared/types";
+import type { Discrepancy, PointState, RequestCase, RunnerEvent, RunProfileName, RunSummary, ServiceResponse } from "../shared/types";
 
 export interface RunnerInput {
   javaBaseUrl: string;
@@ -8,7 +8,7 @@ export interface RunnerInput {
   cases: RequestCase[];
   profile?: RunProfileName;
   seed?: number;
-  fetchPair?: (request: RequestCase) => Promise<{ java: ServiceResponse; typescript: ServiceResponse }>;
+  fetchPair?: (request: RequestCase, signal?: AbortSignal) => Promise<{ java: ServiceResponse; typescript: ServiceResponse }>;
   requestDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -18,9 +18,11 @@ export class Runner {
   private paused = false;
   private stopped = false;
   private summary: RunSummary;
-  private fetchPair: (request: RequestCase) => Promise<{ java: ServiceResponse; typescript: ServiceResponse }>;
+  private fetchPair: (request: RequestCase, signal?: AbortSignal) => Promise<{ java: ServiceResponse; typescript: ServiceResponse }>;
   private requestDelayMs: number;
   private sleep: (ms: number) => Promise<void>;
+  private currentRequestController: AbortController | undefined;
+  private readonly fixtureTerminalStates = new Map<string, PointState>();
 
   constructor(private readonly input: RunnerInput) {
     this.summary = {
@@ -34,10 +36,10 @@ export class Runner {
     };
     this.fetchPair =
       input.fetchPair ??
-      ((request) =>
+      ((request, signal) =>
         Promise.all([
-          fetchService("java", input.javaBaseUrl, request),
-          fetchService("typescript", input.typescriptBaseUrl, request)
+          fetchService("java", input.javaBaseUrl, request, { signal }),
+          fetchService("typescript", input.typescriptBaseUrl, request, { signal })
         ]).then(([java, typescript]) => ({ java, typescript })));
     this.requestDelayMs = Math.max(0, input.requestDelayMs ?? 0);
     this.sleep = input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -62,6 +64,7 @@ export class Runner {
 
   stop(): void {
     this.stopped = true;
+    this.currentRequestController?.abort();
   }
 
   async start(): Promise<RunSummary> {
@@ -74,18 +77,22 @@ export class Runner {
       if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "active" });
       let java: ServiceResponse;
       let typescript: ServiceResponse;
+      const requestController = new AbortController();
+      this.currentRequestController = requestController;
       try {
-        ({ java, typescript } = await this.fetchPair(request));
+        ({ java, typescript } = await this.fetchPair(request, requestController.signal));
       } catch (error) {
         if (this.stopped) break;
         this.summary.failures += 1;
         this.summary.completedCases += 1;
         const discrepancy = createInfrastructureDiscrepancy(request, error);
         this.emit({ type: "discrepancy", discrepancy });
-        if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "blocked" });
+        if (request.fixtureId) this.emitFixtureTerminalState(request.fixtureId, "blocked");
         this.emitSummary();
         await this.waitBetweenRequests(index);
         continue;
+      } finally {
+        if (this.currentRequestController === requestController) this.currentRequestController = undefined;
       }
       if (this.stopped) break;
       this.emit({ type: "current-case", request, java, typescript });
@@ -109,9 +116,9 @@ export class Runner {
           replay: `${request.method} ${formatReplayPath(request)}`
         };
         this.emit({ type: "discrepancy", discrepancy });
-        if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "failed" });
+        if (request.fixtureId) this.emitFixtureTerminalState(request.fixtureId, "failed");
       } else if (request.fixtureId) {
-        this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "passed" });
+        this.emitFixtureTerminalState(request.fixtureId, "passed");
       }
       this.summary.completedCases += 1;
       this.emitSummary();
@@ -129,10 +136,22 @@ export class Runner {
     for (const listener of this.listeners) listener(event);
   }
 
+  private emitFixtureTerminalState(fixtureId: string, nextState: PointState): void {
+    const state = dominantPointState(this.fixtureTerminalStates.get(fixtureId), nextState);
+    this.fixtureTerminalStates.set(fixtureId, state);
+    this.emit({ type: "point-state", fixtureId, state });
+  }
+
   private async waitBetweenRequests(index: number): Promise<void> {
     if (this.requestDelayMs <= 0 || this.stopped || index >= this.input.cases.length - 1) return;
     await this.sleep(this.requestDelayMs);
   }
+}
+
+function dominantPointState(current: PointState | undefined, next: PointState): PointState {
+  if (current === "failed" || next === "failed") return "failed";
+  if (current === "blocked" || next === "blocked") return "blocked";
+  return next;
 }
 
 function formatReplayPath(request: RequestCase): string {

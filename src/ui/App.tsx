@@ -57,6 +57,7 @@ const initialSummary: RunSummary = {
 
 type RunState = "idle" | "running" | "paused" | "stopped";
 type CoverageView = "map" | "table";
+const requestDelayOptions = Array.from({ length: 11 }, (_value, index) => index * 0.5);
 
 function queuedFixtureStates(points: FixturePoint[]): Record<string, PointState> {
   return Object.fromEntries(points.map((point) => [point.id, "queued" as PointState]));
@@ -571,15 +572,17 @@ export function App() {
           </button>
           <label className="speed-control" htmlFor="request-delay">
             <span>Delay</span>
-            <input
+            <select
               id="request-delay"
-              type="range"
-              min="0"
-              max="5"
-              step="0.5"
               value={requestDelaySeconds}
               onChange={(event) => handleRequestDelayChange(Number(event.target.value))}
-            />
+            >
+              {requestDelayOptions.map((seconds) => (
+                <option key={seconds} value={seconds}>
+                  {seconds === 0 ? "full speed" : `${seconds}s`}
+                </option>
+              ))}
+            </select>
             <b>{requestDelaySeconds === 0 ? "full speed" : `${requestDelaySeconds}s`}</b>
           </label>
           <button type="button" className="secondary" onClick={() => void handleSaveReport()}>
