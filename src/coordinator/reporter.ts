@@ -54,7 +54,6 @@ function renderMarkdown(input: ReportInput): string {
     `Cases: ${input.summary.completedCases}/${input.summary.totalCases}`,
     `Failures: ${input.summary.failures}`,
     `Round trips: ${input.summary.roundTrips}`,
-    `Max drift meters: ${input.summary.maxDriftMeters}`,
     `Java version: ${input.serviceVersions.java ?? "unknown"}`,
     `TypeScript version: ${input.serviceVersions.typescript ?? "unknown"}`,
     "",

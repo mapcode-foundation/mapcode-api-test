@@ -11,8 +11,7 @@ const summary: RunSummary = {
   totalCases: 1,
   completedCases: 1,
   failures: 1,
-  roundTrips: 0,
-  maxDriftMeters: 0
+  roundTrips: 0
 };
 
 const discrepancy: Discrepancy = {

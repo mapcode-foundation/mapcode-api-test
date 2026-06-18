@@ -137,15 +137,26 @@ describe("compareResponses", () => {
     expect(diffs).toEqual([]);
   });
 
-  it("keeps lat/lon exact for non-roundtrip parity responses", () => {
+  it("accepts coordinate differences up to 0.00001 degrees in encoded-decoded coordinate responses", () => {
     const diffs = compareResponses(
-      response("java", { latDeg: 52.376514, lonDeg: 4.908543 }),
-      response("typescript", { latDeg: 52.376524, lonDeg: 4.908533 }),
+      response("java", { lat: 52.376514, lon: 4.908543 }),
+      response("typescript", { lat: 52.376524, lon: 4.908533 }),
       "/mapcode/coords/ABC.123",
       { format: "json", expectation: "parity" }
     );
 
-    expect(diffs.map((diff) => diff.path)).toEqual(["$.latDeg", "$.lonDeg"]);
+    expect(diffs).toEqual([]);
+  });
+
+  it("reports coordinate differences larger than 0.00001 degrees", () => {
+    const diffs = compareResponses(
+      response("java", { latDeg: 52.376514, lonDeg: 4.908543 }),
+      response("typescript", { latDeg: 52.376526, lonDeg: 4.908543 }),
+      "/mapcode/coords/ABC.123",
+      { format: "json", expectation: "parity" }
+    );
+
+    expect(diffs.map((diff) => diff.path)).toEqual(["$.latDeg"]);
   });
 });
 

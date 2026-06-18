@@ -4,5 +4,6 @@ test("serves the dashboard shell", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Mapcode REST Parity Runner" })).toBeVisible();
   await expect(page.getByLabel("Profile")).toBeVisible();
+  await expect(page.getByLabel("Run summary")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Report", exact: true })).toBeVisible();
 });

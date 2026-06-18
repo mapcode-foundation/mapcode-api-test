@@ -23,8 +23,7 @@ const summary: RunSummary = {
   totalCases: 40,
   completedCases: 12,
   failures: 2,
-  roundTrips: 6,
-  maxDriftMeters: 0
+  roundTrips: 6
 };
 
 describe("ServicePane", () => {

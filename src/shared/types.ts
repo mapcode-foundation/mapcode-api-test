@@ -82,7 +82,6 @@ export interface RunSummary {
   completedCases: number;
   failures: number;
   roundTrips: number;
-  maxDriftMeters: number;
 }
 
 export type RunnerEvent =

@@ -39,9 +39,9 @@ test("dashboard shows profile, map preview, and report controls", async ({ page 
   const controlOrder = await page.locator(".run-controls").evaluate((node) =>
     Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
   );
-  expect(controlOrder.slice(0, 3)).toEqual(["Start", "Pause", "Stop"]);
-  expect(controlOrder[3]).toContain("Delay");
-  expect(controlOrder[3]).toContain("full speed");
+  expect(controlOrder.slice(0, 4)).toEqual(["FastDeep", "Start", "Pause", "Stop"]);
+  expect(controlOrder[4]).toContain("Delay");
+  expect(controlOrder[4]).toContain("full speed");
   const sectionOrder = await page.locator(".dashboard-main > *").evaluateAll((nodes) =>
     nodes.map((node) => {
       if ((node as HTMLElement).classList.contains("run-summary")) return "summary";
@@ -51,6 +51,13 @@ test("dashboard shows profile, map preview, and report controls", async ({ page 
     })
   );
   expect(sectionOrder).toEqual(["summary", "workspace", "coverage"]);
+  const summaryStrip = page.locator(".run-summary");
+  await expect(summaryStrip).toContainText("Requests");
+  await expect(summaryStrip).toContainText("Cases");
+  await expect(summaryStrip).toContainText("Failures");
+  await expect(summaryStrip).toContainText("Round trips");
+  await expect(summaryStrip).not.toContainText("Run Summary");
+  await expect(summaryStrip).not.toContainText("Max drift");
 });
 
 test("dashboard keeps API response panes vertically split at app browser widths", async ({ page }) => {
@@ -138,6 +145,46 @@ test("dashboard applies speed changes during a run with a pause and resume cycle
 
   await expect.poll(() => calls).toEqual(["start", "pause", "delay", "resume"]);
   expect(delayPayload).toMatchObject({ requestDelaySeconds: 3 });
+});
+
+test("dashboard stop wins over an in-flight speed resume cycle", async ({ page }) => {
+  let releaseResume!: () => void;
+  let resumeFulfilled = false;
+  const resumeCanFinish = new Promise<void>((resolve) => {
+    releaseResume = resolve;
+  });
+  await routeServices(page);
+  await page.route("**/api/run/start", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ state: "running", totalCases: 10 })
+    });
+  });
+  await page.route("**/api/run/pause", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ state: "paused" }) });
+  });
+  await page.route("**/api/run/delay", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ requestDelaySeconds: 3 }) });
+  });
+  await page.route("**/api/run/resume", async (route) => {
+    await resumeCanFinish;
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ state: "running" }) });
+    resumeFulfilled = true;
+  });
+  await page.route("**/api/run/stop", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ state: "stopped" }) });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await page.getByLabel("Delay").fill("3");
+  await expect(page.locator(".progress-copy span")).toContainText("paused");
+
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  releaseResume();
+
+  await expect.poll(() => resumeFulfilled).toBe(true);
+  await expect(page.locator(".progress-copy span")).toContainText("stopped");
 });
 
 test("dashboard disables Start while either API is not operational", async ({ page }) => {

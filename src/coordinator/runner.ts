@@ -30,8 +30,7 @@ export class Runner {
       totalCases: input.cases.length,
       completedCases: 0,
       failures: 0,
-      roundTrips: 0,
-      maxDriftMeters: 0
+      roundTrips: 0
     };
     this.fetchPair =
       input.fetchPair ??

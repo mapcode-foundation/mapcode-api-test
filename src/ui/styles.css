@@ -221,7 +221,7 @@ h1 {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(220px, 1fr) auto;
   align-items: center;
   gap: 14px;
   padding: 12px;
@@ -237,14 +237,7 @@ h1 {
 }
 
 .profile-control {
-  max-width: 280px;
-}
-
-.profile-help {
-  color: #6b7b8b;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.25;
+  width: 150px;
 }
 
 select,
@@ -679,34 +672,6 @@ input {
   text-transform: uppercase;
 }
 
-.run-summary {
-  display: grid;
-  grid-template-columns: minmax(210px, 1.45fr) repeat(5, minmax(94px, 1fr));
-  overflow: hidden;
-}
-
-.summary-title,
-.summary-item {
-  display: grid;
-  min-width: 0;
-  align-content: center;
-  gap: 2px;
-  min-height: 70px;
-  border-right: 1px solid #e3e9ef;
-  padding: 12px 14px;
-}
-
-.summary-title {
-  background: #f8fafc;
-}
-
-.summary-title strong {
-  color: #111923;
-  font-size: 16px;
-}
-
-.summary-title span,
-.summary-item .label,
 .detail-body .label {
   overflow: hidden;
   color: #6b7b8b;
@@ -722,6 +687,39 @@ input {
   text-transform: none;
 }
 
+.metric-fail {
+  color: #be123c !important;
+}
+
+.run-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  overflow: hidden;
+}
+
+.summary-item {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 2px;
+  min-height: 62px;
+  border-right: 1px solid #e3e9ef;
+  padding: 12px 14px;
+}
+
+.summary-item:last-child {
+  border-right: 0;
+}
+
+.summary-item .label {
+  overflow: hidden;
+  color: #6b7b8b;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .summary-item b {
   overflow: hidden;
   color: #15202b;
@@ -729,14 +727,6 @@ input {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.metric-fail {
-  color: #be123c !important;
-}
-
-.metric-warn {
-  color: #b45309 !important;
 }
 
 .workspace {
@@ -1171,24 +1161,6 @@ input {
 
   h1 {
     font-size: 28px;
-  }
-
-  .run-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .summary-title {
-    grid-column: 1 / -1;
-  }
-
-  .summary-title,
-  .summary-item {
-    min-height: 62px;
-    border-bottom: 1px solid #e3e9ef;
-  }
-
-  .summary-item:nth-child(2n + 1) {
-    border-right: 0;
   }
 
   .workspace-head,

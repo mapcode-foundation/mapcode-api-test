@@ -474,8 +474,7 @@ function fallbackSummary(profile: RunProfileName, seed: number, failures: number
     totalCases: 0,
     completedCases: 0,
     failures,
-    roundTrips: 0,
-    maxDriftMeters: 0
+    roundTrips: 0
   };
 }
 

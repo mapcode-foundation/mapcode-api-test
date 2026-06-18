@@ -38,10 +38,6 @@ import type {
 } from "../shared/types";
 
 const profiles: RunProfileName[] = ["Fast", "Deep"];
-const profileDescriptions: Record<RunProfileName, string> = {
-  Fast: "Curated city, pole, and ocean coverage for quick parity checks.",
-  Deep: "City clouds plus a deterministic 10,000-point global raster."
-};
 const serviceProgressLabels: Record<ServiceAvailability, string> = {
   unknown: "not started",
   starting: "starting",
@@ -56,8 +52,7 @@ const initialSummary: RunSummary = {
   totalCases: 0,
   completedCases: 0,
   failures: 0,
-  roundTrips: 0,
-  maxDriftMeters: 0
+  roundTrips: 0
 };
 
 type RunState = "idle" | "running" | "paused" | "stopped";
@@ -83,6 +78,7 @@ export function App() {
   const [coverageView, setCoverageView] = useState<CoverageView>("table");
   const [runState, setRunState] = useState<RunState>("idle");
   const runStateRef = useRef<RunState>("idle");
+  const runControlTokenRef = useRef(0);
   const pendingStartRef = useRef<Promise<void> | undefined>(undefined);
   const [requestDelaySeconds, setRequestDelaySeconds] = useState(0);
   const [report, setReport] = useState<ReportDialogData | undefined>();
@@ -141,8 +137,7 @@ export function App() {
           totalCases: nextCases.length,
           completedCases: 0,
           failures: 0,
-          roundTrips: 0,
-          maxDriftMeters: 0
+          roundTrips: 0
         }));
         setReport(undefined);
         setLoadMessage(`${fixtureSet.points.length} fixtures pinned`);
@@ -242,6 +237,8 @@ export function App() {
   }
 
   async function handleStart(): Promise<void> {
+    const runControlToken = runControlTokenRef.current + 1;
+    runControlTokenRef.current = runControlToken;
     setDiscrepancies([]);
     setSelectedDiscrepancy(undefined);
     setCurrentRequest(undefined);
@@ -253,15 +250,17 @@ export function App() {
     const startTask = (async () => {
       try {
         const result = await startRun(profile, requestDelaySeconds);
+        if (runControlTokenRef.current !== runControlToken) return;
         setRunStateValue(result.state as RunState);
         setLoadMessage(`${result.totalCases} queued requests`);
       } catch (error) {
+        if (runControlTokenRef.current !== runControlToken) return;
         setRunStateValue("stopped");
         setLoadMessage(error instanceof Error ? error.message : "Run start failed");
         const serviceState = await getServices().catch(() => undefined);
         if (serviceState) setServices(serviceState);
       } finally {
-        pendingStartRef.current = undefined;
+        if (runControlTokenRef.current === runControlToken) pendingStartRef.current = undefined;
       }
     })();
     pendingStartRef.current = startTask;
@@ -286,6 +285,7 @@ export function App() {
 
   async function handleStop(): Promise<void> {
     try {
+      runControlTokenRef.current += 1;
       setRunStateValue("stopped");
       await stopRun();
     } catch {
@@ -299,13 +299,18 @@ export function App() {
   }
 
   async function applyRequestDelay(nextDelaySeconds: number): Promise<void> {
+    const runControlToken = runControlTokenRef.current;
     try {
       await pendingStartRef.current;
+      if (runControlTokenRef.current !== runControlToken) return;
       if (runStateRef.current === "running") {
         setRunStateValue("paused");
         await pauseRun();
+        if (runControlTokenRef.current !== runControlToken) return;
         await updateRunDelay(nextDelaySeconds);
+        if (runControlTokenRef.current !== runControlToken) return;
         await resumeRun();
+        if (runControlTokenRef.current !== runControlToken) return;
         setRunStateValue("running");
         return;
       }
@@ -463,22 +468,6 @@ export function App() {
       </header>
 
       <section className="toolbar" aria-label="Run controls">
-        <label className="profile-control" htmlFor="profile-select">
-          <span>Profile</span>
-          <select
-            id="profile-select"
-            value={profile}
-            onChange={(event) => setProfile(event.target.value as RunProfileName)}
-          >
-            {profiles.map((profileName) => (
-              <option key={profileName} value={profileName}>
-                {profileName}
-              </option>
-            ))}
-          </select>
-          <span className="profile-help">{profileDescriptions[profile]}</span>
-        </label>
-
         <div className="progress-block">
           <div className="progress-copy">
             <span>{runState}</span>
@@ -499,6 +488,20 @@ export function App() {
         </div>
 
         <div className="run-controls">
+          <div className="profile-control">
+            <select
+              id="profile-select"
+              aria-label="Profile"
+              value={profile}
+              onChange={(event) => setProfile(event.target.value as RunProfileName)}
+            >
+              {profiles.map((profileName) => (
+                <option key={profileName} value={profileName}>
+                  {profileName}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             type="button"
             className="primary"

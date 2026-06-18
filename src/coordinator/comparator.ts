@@ -1,7 +1,7 @@
 import { distanceMeters, type LatLon } from "../shared/distance";
 import type { ApiFormat, CanonicalValue, RequestCase, SemanticDiff, ServiceResponse } from "../shared/types";
 
-const roundTripCoordinateToleranceDegrees = 0.00001;
+const coordinateToleranceDegrees = 0.00001;
 
 export function compareResponses(
   java: ServiceResponse,
@@ -30,8 +30,7 @@ export function compareResponses(
 
   return diffs.concat(
     compareCanonical(java.canonical ?? null, typescript.canonical ?? null, "$", {
-      coordinateToleranceDegrees:
-        options.expectation === "roundtrip" ? roundTripCoordinateToleranceDegrees : undefined
+      coordinateToleranceDegrees
     })
   );
 }
