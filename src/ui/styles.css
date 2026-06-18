@@ -121,9 +121,22 @@ h1 {
   font-size: 13px;
 }
 
+.header-controls {
+  display: grid;
+  max-width: 540px;
+  justify-items: end;
+  gap: 8px;
+}
+
+.api-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .service-health {
   display: flex;
-  max-width: 520px;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
@@ -1140,8 +1153,14 @@ input {
   }
 
   .service-health,
+  .api-controls,
   .run-controls {
     justify-content: flex-start;
+  }
+
+  .header-controls {
+    max-width: none;
+    justify-items: start;
   }
 
   .toolbar {

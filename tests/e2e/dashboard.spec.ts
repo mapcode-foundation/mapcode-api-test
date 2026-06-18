@@ -36,6 +36,15 @@ test("dashboard shows profile, map preview, and report controls", async ({ page 
   await expect(page.getByRole("button", { name: "Preview map" })).toHaveCount(0);
   await expect(page.getByLabel("Delay")).toHaveValue("0");
   await expect(page.getByRole("button", { name: "Report", exact: true })).toBeVisible();
+  const apiControlOrder = await page.locator(".api-controls").evaluate((node) =>
+    Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
+  );
+  expect(apiControlOrder).toEqual(["Auto-start APIs", "Stop APIs"]);
+  const serviceControlOrder = await page.locator(".service-health").evaluate((node) =>
+    Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
+  );
+  expect(serviceControlOrder).not.toContain("Auto-start APIs");
+  expect(serviceControlOrder).not.toContain("Stop APIs");
   const controlOrder = await page.locator(".run-controls").evaluate((node) =>
     Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
   );
@@ -111,6 +120,22 @@ test("dashboard starts at full speed by default", async ({ page }) => {
   await page.getByRole("button", { name: "Start", exact: true }).click();
 
   expect(startPayload).toMatchObject({ profile: "Fast", requestDelaySeconds: 0 });
+});
+
+test("dashboard disables Start while a run is active", async ({ page }) => {
+  await routeServices(page);
+  await page.route("**/api/run/start", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ state: "running", totalCases: 10 })
+    });
+  });
+
+  await page.goto("/");
+  const startButton = page.getByRole("button", { name: "Start", exact: true });
+  await expect(startButton).toBeEnabled();
+  await startButton.click();
+  await expect(startButton).toBeDisabled();
 });
 
 test("dashboard applies speed changes during a run with a pause and resume cycle", async ({ page }) => {
@@ -288,10 +313,10 @@ test("dashboard stops both APIs from the main screen", async ({ page }) => {
   });
 
   await page.goto("/");
-  const controlOrder = await page.locator(".service-health").evaluate((node) =>
+  const controlOrder = await page.locator(".api-controls").evaluate((node) =>
     Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
   );
-  expect(controlOrder.slice(0, 2)).toEqual(["Auto-start APIs", "Stop APIs"]);
+  expect(controlOrder).toEqual(["Auto-start APIs", "Stop APIs"]);
 
   await page.getByRole("button", { name: "Stop APIs" }).click();
 

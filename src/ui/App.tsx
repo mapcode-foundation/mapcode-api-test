@@ -190,6 +190,8 @@ export function App() {
           : "map key missing";
   const showTomTomModal = isMapModalOpen && !hasTomTomApiKey;
   const canStartRun = services.java.availability === "available" && services.typescript.availability === "available";
+  const isRunActive = runState === "running" || runState === "paused";
+  const canStartButton = canStartRun && !isRunActive;
 
   function setRunStateValue(nextState: RunState): void {
     runStateRef.current = nextState;
@@ -443,27 +445,31 @@ export function App() {
             Run {summary.runId} - {summary.profile} profile - {loadMessage}
           </p>
         </div>
-        <div className="service-health" aria-label="Service status">
-          <button
-            type="button"
-            className="auto-start-button"
-            disabled={isAutoStartingServices}
-            onClick={() => void handleAutoStartServices()}
-          >
-            {isAutoStartingServices ? "Starting APIs" : "Auto-start APIs"}
-          </button>
-          <button
-            type="button"
-            className="stop-apis-button"
-            disabled={isStoppingServices}
-            onClick={() => void handleStopServices()}
-          >
-            {isStoppingServices ? "Stopping APIs" : "Stop APIs"}
-          </button>
-          {(["java", "typescript"] as const).map((kind) => (
-            <ServiceStatusButton key={kind} service={services[kind]} onClick={() => openServiceConfig(kind)} />
-          ))}
-          <span className="status-chip muted">{mapKeyStatus}</span>
+        <div className="header-controls">
+          <div className="api-controls" aria-label="API controls">
+            <button
+              type="button"
+              className="auto-start-button"
+              disabled={isAutoStartingServices}
+              onClick={() => void handleAutoStartServices()}
+            >
+              {isAutoStartingServices ? "Starting APIs" : "Auto-start APIs"}
+            </button>
+            <button
+              type="button"
+              className="stop-apis-button"
+              disabled={isStoppingServices}
+              onClick={() => void handleStopServices()}
+            >
+              {isStoppingServices ? "Stopping APIs" : "Stop APIs"}
+            </button>
+          </div>
+          <div className="service-health" aria-label="Service status">
+            {(["java", "typescript"] as const).map((kind) => (
+              <ServiceStatusButton key={kind} service={services[kind]} onClick={() => openServiceConfig(kind)} />
+            ))}
+            <span className="status-chip muted">{mapKeyStatus}</span>
+          </div>
         </div>
       </header>
 
@@ -505,8 +511,14 @@ export function App() {
           <button
             type="button"
             className="primary"
-            disabled={!canStartRun}
-            title={canStartRun ? undefined : "Both APIs must be operational before starting a run."}
+            disabled={!canStartButton}
+            title={
+              canStartRun
+                ? isRunActive
+                  ? "Stop the active run before starting a new one."
+                  : undefined
+                : "Both APIs must be operational before starting a run."
+            }
             onClick={() => void handleStart()}
           >
             Start
