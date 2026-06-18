@@ -122,6 +122,29 @@ describe("coordinator server", () => {
     });
   });
 
+  it("stops configured API ports even when the coordinator has no child process handles", async () => {
+    const stoppedBaseUrls: string[] = [];
+    const app = createServerApp({
+      env: {},
+      stopPortListener: async (baseUrl) => {
+        stoppedBaseUrls.push(baseUrl);
+      }
+    });
+
+    await inject(app, "/api/services/java/config", {
+      method: "POST",
+      body: { baseUrl: "http://127.0.0.1:19081", sourcePath: "../mapcode-rest-service" }
+    });
+    await inject(app, "/api/services/typescript/config", {
+      method: "POST",
+      body: { baseUrl: "http://127.0.0.1:19082", sourcePath: "../mapcode-rest-service-ts" }
+    });
+    const response = await inject(app, "/api/services/stop", { method: "POST" });
+
+    expect(response.statusCode).toBe(200);
+    expect(stoppedBaseUrls).toEqual(["http://127.0.0.1:19081", "http://127.0.0.1:19082"]);
+  });
+
   it("rejects automatic start when the source repo path does not exist", async () => {
     const app = createServerApp({ env: {} });
     const response = await inject(app, "/api/services/java/start", {

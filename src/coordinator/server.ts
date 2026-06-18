@@ -1,5 +1,5 @@
 import express, { type Response } from "express";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
@@ -20,6 +20,7 @@ import type {
 
 export interface ServerInput {
   env?: NodeJS.ProcessEnv;
+  stopPortListener?: (baseUrl: string) => Promise<void>;
 }
 
 type RunState = "idle" | "running" | "paused" | "stopped";
@@ -45,6 +46,7 @@ const serviceLabels: Record<ServiceKind, string> = {
 export function createServerApp(input: ServerInput = {}) {
   loadEnv();
   const env = input.env ?? process.env;
+  const stopPortListener = input.stopPortListener ?? terminatePortListener;
   let runtimeTomTomApiKey: string | undefined;
   let activeRunner: Runner | undefined;
   let activeRunToken = 0;
@@ -200,13 +202,20 @@ export function createServerApp(input: ServerInput = {}) {
 
   async function stopService(
     kind: ServiceKind,
-    options: { markUnavailable?: boolean; log?: boolean } = {}
+    options: { markUnavailable?: boolean; log?: boolean; stopPortListener?: boolean } = {}
   ): Promise<void> {
     const service = services[kind];
     const child = service.child;
     if (child) {
       service.child = undefined;
       terminateChildProcess(child);
+    }
+    if (options.stopPortListener) {
+      try {
+        await stopPortListener(service.baseUrl);
+      } catch (error) {
+        addServiceLog(kind, `Could not stop listener at ${service.baseUrl}: ${formatError(error)}`);
+      }
     }
     if (options.markUnavailable) setServiceAvailability(kind, "unavailable");
     if (options.log) addServiceLog(kind, `Stopped ${service.label}`);
@@ -277,8 +286,8 @@ export function createServerApp(input: ServerInput = {}) {
   app.get("/api/services", (_req, res) => res.json(publicServices()));
   app.post("/api/services/stop", async (_req, res) => {
     await Promise.all([
-      stopService("java", { markUnavailable: true, log: true }),
-      stopService("typescript", { markUnavailable: true, log: true })
+      stopService("java", { markUnavailable: true, log: true, stopPortListener: true }),
+      stopService("typescript", { markUnavailable: true, log: true, stopPortListener: true })
     ]);
     return res.json(publicServices());
   });
@@ -484,6 +493,35 @@ function terminateChildProcess(child: ChildProcessWithoutNullStreams): void {
     }
   }
   child.kill("SIGTERM");
+}
+
+async function terminatePortListener(baseUrl: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const pids = await listeningPids(portFromBaseUrl(baseUrl));
+  for (const pid of pids) {
+    if (pid !== process.pid) process.kill(pid, "SIGTERM");
+  }
+}
+
+function listeningPids(port: string): Promise<number[]> {
+  return new Promise((resolvePids, rejectPids) => {
+    execFile("lsof", [`-tiTCP:${port}`, "-sTCP:LISTEN"], (error, stdout, stderr) => {
+      if (error) {
+        if ("code" in error && error.code === 1) {
+          resolvePids([]);
+          return;
+        }
+        rejectPids(new Error(stderr.trim() || error.message));
+        return;
+      }
+
+      const pids = stdout
+        .split(/\s+/)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      resolvePids([...new Set(pids)]);
+    });
+  });
 }
 
 function normalizeBaseUrl(value: string): string {
