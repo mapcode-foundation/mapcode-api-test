@@ -42,11 +42,11 @@ export async function startService(kind: ServiceKind, baseUrl: string, sourcePat
   return postJson<ServiceStatus>(`/api/services/${kind}/start`, { baseUrl, sourcePath });
 }
 
-export async function startRun(profile: string): Promise<{ state: string; totalCases: number }> {
+export async function startRun(profile: string, requestDelaySeconds: number): Promise<{ state: string; totalCases: number }> {
   const response = await fetch("/api/run/start", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ profile })
+    body: JSON.stringify({ profile, requestDelaySeconds })
   });
   if (!response.ok) {
     const body = await response.json().catch(() => undefined);
@@ -62,6 +62,10 @@ export async function pauseRun(): Promise<void> {
 
 export async function resumeRun(): Promise<void> {
   await postJson("/api/run/resume");
+}
+
+export async function updateRunDelay(requestDelaySeconds: number): Promise<void> {
+  await postJson("/api/run/delay", { requestDelaySeconds });
 }
 
 export async function stopRun(): Promise<void> {

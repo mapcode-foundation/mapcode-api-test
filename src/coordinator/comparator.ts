@@ -31,6 +31,19 @@ export function compareResponses(
 
 export function compareCanonical(expected: CanonicalValue | undefined, actual: CanonicalValue | undefined, path = "$"): SemanticDiff[] {
   if (JSON.stringify(expected) === JSON.stringify(actual)) return [];
+  if (isVolatilePresenceOnlyPath(path)) {
+    if (expected !== null && expected !== undefined && actual !== null && actual !== undefined) return [];
+    if (expected !== null && expected !== undefined) {
+      return [
+        {
+          path,
+          expected,
+          actual,
+          message: "Expected TypeScript to emit a non-null value when Java emits this field"
+        }
+      ];
+    }
+  }
 
   if (Array.isArray(expected) && Array.isArray(actual)) {
     const diffs: SemanticDiff[] = [];
@@ -113,6 +126,10 @@ function expectedContentType(format: ApiFormat): string {
 
 function isVersionEndpoint(path: string): boolean {
   return path === "/mapcode/version" || path === "/mapcode/json/version" || path === "/mapcode/xml/version";
+}
+
+function isVolatilePresenceOnlyPath(path: string): boolean {
+  return path === "$.time" || path === "$.reference";
 }
 
 function isRecord(value: unknown): value is Record<string, CanonicalValue> {

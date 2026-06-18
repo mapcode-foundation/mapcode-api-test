@@ -149,4 +149,51 @@ describe("Runner", () => {
     expect(events).not.toContain("current-case");
     expect(events).not.toContain("discrepancy");
   });
+
+  it("waits between requests when a request delay is configured", async () => {
+    const sleeps: number[] = [];
+    const fetches: string[] = [];
+    const secondRequest: RequestCase = { ...request, id: "territory-json", path: "/mapcode/territories/NLD" };
+    const runner = new Runner({
+      javaBaseUrl: "http://java.test",
+      typescriptBaseUrl: "http://ts.test",
+      cases: [request, secondRequest],
+      requestDelayMs: 1000,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      fetchPair: async (nextRequest) => {
+        fetches.push(nextRequest.id);
+        return { java: response("java", "1"), typescript: response("typescript", "1") };
+      }
+    });
+
+    await runner.start();
+
+    expect(fetches).toEqual(["version-json", "territory-json"]);
+    expect(sleeps).toEqual([1000]);
+  });
+
+  it("uses an updated request delay for the next wait", async () => {
+    const sleeps: number[] = [];
+    const secondRequest: RequestCase = { ...request, id: "territory-json", path: "/mapcode/territories/NLD" };
+    const runner = new Runner({
+      javaBaseUrl: "http://java.test",
+      typescriptBaseUrl: "http://ts.test",
+      cases: [request, secondRequest],
+      requestDelayMs: 1000,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      fetchPair: async () => ({ java: response("java", "1"), typescript: response("typescript", "1") })
+    });
+
+    runner.onEvent((event) => {
+      if (event.type === "run-summary" && event.summary.completedCases === 1) runner.setRequestDelay(2500);
+    });
+
+    await runner.start();
+
+    expect(sleeps).toEqual([2500]);
+  });
 });

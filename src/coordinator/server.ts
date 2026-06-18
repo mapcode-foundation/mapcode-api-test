@@ -327,7 +327,8 @@ export function createServerApp(input: ServerInput = {}) {
         typescriptBaseUrl,
         profile,
         seed: fixtureSet.seed,
-        cases
+        cases,
+        requestDelayMs: parseRequestDelayMs(req.body?.requestDelaySeconds)
       });
 
       lastProfile = profile;
@@ -371,6 +372,11 @@ export function createServerApp(input: ServerInput = {}) {
     activeRunner.resume();
     runState = "running";
     return res.json({ state: runState });
+  });
+  app.post("/api/run/delay", (req, res) => {
+    const requestDelayMs = parseRequestDelayMs(req.body?.requestDelaySeconds);
+    activeRunner?.setRequestDelay(requestDelayMs);
+    return res.json({ requestDelayMs, requestDelaySeconds: requestDelayMs / 1000 });
   });
   app.post("/api/run/stop", (_req, res) => {
     if (!activeRunner) return res.json({ state: "idle" });
@@ -425,6 +431,12 @@ function parseServiceKind(value: string): ServiceKind | undefined {
 function parseTilePart(value: string): number | undefined {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+export function parseRequestDelayMs(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  const seconds = Number.isFinite(parsed) ? parsed : 0;
+  return Math.round(Math.min(5, Math.max(0, seconds)) * 1000);
 }
 
 function readBodyString(value: unknown, fallback: string): string {

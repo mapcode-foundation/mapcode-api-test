@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { buildServiceStartPlan, createServerApp } from "../src/coordinator/server";
+import { buildServiceStartPlan, createServerApp, parseRequestDelayMs } from "../src/coordinator/server";
 import { inject } from "./fixtures/inject";
 import { startMockService } from "./fixtures/mock-service";
 
@@ -155,5 +155,12 @@ describe("coordinator server", () => {
       error: "APIs unavailable",
       unavailable: ["Java API (leading)", "TypeScript API (ported)"]
     });
+  });
+
+  it("clamps request delay seconds from run start payload", async () => {
+    expect(parseRequestDelayMs(undefined)).toBe(0);
+    expect(parseRequestDelayMs(-1)).toBe(0);
+    expect(parseRequestDelayMs(2.5)).toBe(2500);
+    expect(parseRequestDelayMs(10)).toBe(5000);
   });
 });

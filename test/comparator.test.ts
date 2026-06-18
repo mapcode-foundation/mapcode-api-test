@@ -26,6 +26,32 @@ describe("compareCanonical", () => {
       }
     ]);
   });
+
+  it("allows top-level time and reference values to differ when both services emit values", () => {
+    expect(
+      compareCanonical(
+        { time: "2026-06-18T10:00:00Z", reference: "java-run-1" },
+        { time: "2026-06-18T10:00:01Z", reference: "ts-run-2" }
+      )
+    ).toEqual([]);
+  });
+
+  it("requires TypeScript to emit a real top-level time or reference when Java does", () => {
+    expect(compareCanonical({ time: "2026-06-18T10:00:00Z", reference: "java-run-1" }, { time: null })).toEqual([
+      {
+        path: "$.reference",
+        expected: "java-run-1",
+        actual: undefined,
+        message: "Expected TypeScript to emit a non-null value when Java emits this field"
+      },
+      {
+        path: "$.time",
+        expected: "2026-06-18T10:00:00Z",
+        actual: null,
+        message: "Expected TypeScript to emit a non-null value when Java emits this field"
+      }
+    ]);
+  });
 });
 
 describe("compareResponses", () => {

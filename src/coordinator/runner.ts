@@ -9,6 +9,8 @@ export interface RunnerInput {
   profile?: RunProfileName;
   seed?: number;
   fetchPair?: (request: RequestCase) => Promise<{ java: ServiceResponse; typescript: ServiceResponse }>;
+  requestDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export class Runner {
@@ -17,6 +19,8 @@ export class Runner {
   private stopped = false;
   private summary: RunSummary;
   private fetchPair: (request: RequestCase) => Promise<{ java: ServiceResponse; typescript: ServiceResponse }>;
+  private requestDelayMs: number;
+  private sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly input: RunnerInput) {
     this.summary = {
@@ -36,6 +40,8 @@ export class Runner {
           fetchService("java", input.javaBaseUrl, request),
           fetchService("typescript", input.typescriptBaseUrl, request)
         ]).then(([java, typescript]) => ({ java, typescript })));
+    this.requestDelayMs = Math.max(0, input.requestDelayMs ?? 0);
+    this.sleep = input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   onEvent(listener: (event: RunnerEvent) => void): () => void {
@@ -51,13 +57,18 @@ export class Runner {
     this.paused = false;
   }
 
+  setRequestDelay(requestDelayMs: number): void {
+    this.requestDelayMs = Math.max(0, requestDelayMs);
+  }
+
   stop(): void {
     this.stopped = true;
   }
 
   async start(): Promise<RunSummary> {
     this.emitSummary();
-    for (const request of this.input.cases) {
+    for (let index = 0; index < this.input.cases.length; index += 1) {
+      const request = this.input.cases[index];
       if (this.stopped) break;
       while (this.paused && !this.stopped) await new Promise((resolve) => setTimeout(resolve, 100));
       if (this.stopped) break;
@@ -74,6 +85,7 @@ export class Runner {
         this.emit({ type: "discrepancy", discrepancy });
         if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "blocked" });
         this.emitSummary();
+        await this.waitBetweenRequests(index);
         continue;
       }
       if (this.stopped) break;
@@ -104,6 +116,7 @@ export class Runner {
       }
       this.summary.completedCases += 1;
       this.emitSummary();
+      await this.waitBetweenRequests(index);
     }
     this.emit({ type: "run-complete", summary: { ...this.summary } });
     return this.summary;
@@ -115,6 +128,11 @@ export class Runner {
 
   private emit(event: RunnerEvent): void {
     for (const listener of this.listeners) listener(event);
+  }
+
+  private async waitBetweenRequests(index: number): Promise<void> {
+    if (this.requestDelayMs <= 0 || this.stopped || index >= this.input.cases.length - 1) return;
+    await this.sleep(this.requestDelayMs);
   }
 }
 

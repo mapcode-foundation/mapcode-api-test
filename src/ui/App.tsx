@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   checkService,
   configureService,
@@ -13,6 +13,7 @@ import {
   startRun,
   startService,
   stopRun,
+  updateRunDelay,
   type ServicesResponse
 } from "./api";
 import { CoverageMap } from "./components/CoverageMap";
@@ -80,6 +81,9 @@ export function App() {
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [coverageView, setCoverageView] = useState<CoverageView>("table");
   const [runState, setRunState] = useState<RunState>("idle");
+  const runStateRef = useRef<RunState>("idle");
+  const pendingStartRef = useRef<Promise<void> | undefined>(undefined);
+  const [requestDelaySeconds, setRequestDelaySeconds] = useState(0);
   const [report, setReport] = useState<ReportDialogData | undefined>();
   const [services, setServices] = useState<ServicesResponse>(initialServices);
   const [configuringService, setConfiguringService] = useState<ServiceKind | undefined>();
@@ -187,6 +191,12 @@ export function App() {
           ? "map key on server"
           : "map key missing";
   const showTomTomModal = isMapModalOpen && !hasTomTomApiKey;
+  const canStartRun = services.java.availability === "available" && services.typescript.availability === "available";
+
+  function setRunStateValue(nextState: RunState): void {
+    runStateRef.current = nextState;
+    setRunState(nextState);
+  }
 
   function handleRunnerEvent(event: unknown): void {
     if (!isRunnerEvent(event)) return;
@@ -211,7 +221,7 @@ export function App() {
         break;
       case "run-complete":
         setSummary(event.summary);
-        setRunState("stopped");
+        setRunStateValue("stopped");
         break;
       case "service-log":
         setServices((current) => ({
@@ -237,40 +247,72 @@ export function App() {
     setFixtureStates(queuedFixtureStates(fixtures));
     setReport(undefined);
 
-    try {
-      const result = await startRun(profile);
-      setRunState(result.state as RunState);
-      setLoadMessage(`${result.totalCases} queued requests`);
-    } catch (error) {
-      setRunState("stopped");
-      setLoadMessage(error instanceof Error ? error.message : "Run start failed");
-      const serviceState = await getServices().catch(() => undefined);
-      if (serviceState) setServices(serviceState);
-    }
+    const startTask = (async () => {
+      try {
+        const result = await startRun(profile, requestDelaySeconds);
+        setRunStateValue(result.state as RunState);
+        setLoadMessage(`${result.totalCases} queued requests`);
+      } catch (error) {
+        setRunStateValue("stopped");
+        setLoadMessage(error instanceof Error ? error.message : "Run start failed");
+        const serviceState = await getServices().catch(() => undefined);
+        if (serviceState) setServices(serviceState);
+      } finally {
+        pendingStartRef.current = undefined;
+      }
+    })();
+    pendingStartRef.current = startTask;
+    await startTask;
   }
 
   async function handlePauseResume(): Promise<void> {
     try {
-      if (runState === "paused") {
-        setRunState("running");
+      if (runStateRef.current === "paused") {
+        setRunStateValue("running");
         await resumeRun();
         return;
       }
 
-      setRunState("paused");
+      setRunStateValue("paused");
       await pauseRun();
     } catch {
-      setRunState("stopped");
+      setRunStateValue("stopped");
       setLoadMessage("Run control failed");
     }
   }
 
   async function handleStop(): Promise<void> {
     try {
-      setRunState("stopped");
+      setRunStateValue("stopped");
       await stopRun();
     } catch {
       setLoadMessage("Run control failed");
+    }
+  }
+
+  function handleRequestDelayChange(nextDelaySeconds: number): void {
+    setRequestDelaySeconds(nextDelaySeconds);
+    void applyRequestDelay(nextDelaySeconds);
+  }
+
+  async function applyRequestDelay(nextDelaySeconds: number): Promise<void> {
+    try {
+      await pendingStartRef.current;
+      if (runStateRef.current === "running") {
+        setRunStateValue("paused");
+        await pauseRun();
+        await updateRunDelay(nextDelaySeconds);
+        await resumeRun();
+        setRunStateValue("running");
+        return;
+      }
+
+      if (runStateRef.current === "paused") {
+        await updateRunDelay(nextDelaySeconds);
+      }
+    } catch {
+      setRunStateValue("stopped");
+      setLoadMessage("Run speed update failed");
     }
   }
 
@@ -328,19 +370,12 @@ export function App() {
       const service = await startService(kind, serviceDraftUrl, serviceDraftSourcePath);
       setServices((current) => ({ ...current, [kind]: service }));
       setServiceMessage(`${service.label} ${serviceProgressLabels[service.availability]}`);
+      if (service.availability === "available") setConfiguringService(undefined);
     } catch {
       const serviceState = await getServices().catch(() => undefined);
       if (serviceState) setServices(serviceState);
       setServiceMessage("Automatic start failed. Check the service logs below.");
     }
-  }
-
-  function handlePreviewMap(): void {
-    if (hasTomTomApiKey) {
-      setCoverageView("map");
-      return;
-    }
-    setIsMapModalOpen(true);
   }
 
   return (
@@ -398,7 +433,13 @@ export function App() {
         </div>
 
         <div className="run-controls">
-          <button type="button" className="primary" onClick={() => void handleStart()}>
+          <button
+            type="button"
+            className="primary"
+            disabled={!canStartRun}
+            title={canStartRun ? undefined : "Both APIs must be operational before starting a run."}
+            onClick={() => void handleStart()}
+          >
             Start
           </button>
           <button
@@ -409,12 +450,6 @@ export function App() {
           >
             {runState === "paused" ? "Resume" : "Pause"}
           </button>
-          <button type="button" className="secondary" onClick={handlePreviewMap}>
-            Preview map
-          </button>
-          <button type="button" className="secondary" onClick={() => void handleSaveReport()}>
-            Save report
-          </button>
           <button
             type="button"
             className="danger"
@@ -423,18 +458,27 @@ export function App() {
           >
             Stop
           </button>
+          <label className="speed-control" htmlFor="request-delay">
+            <span>Delay</span>
+            <input
+              id="request-delay"
+              type="range"
+              min="0"
+              max="5"
+              step="0.5"
+              value={requestDelaySeconds}
+              onChange={(event) => handleRequestDelayChange(Number(event.target.value))}
+            />
+            <b>{requestDelaySeconds === 0 ? "full speed" : `${requestDelaySeconds}s`}</b>
+          </label>
+          <button type="button" className="secondary" onClick={() => void handleSaveReport()}>
+            Save report
+          </button>
         </div>
       </section>
 
       <main className="dashboard-main">
         <RunSummaryView summary={summary} />
-        <CoverageMap
-          points={fixtures}
-          states={fixtureStates}
-          mapKeyAvailable={Boolean(hasTomTomApiKey)}
-          view={coverageView}
-          onViewChange={setCoverageView}
-        />
 
         <section className="workspace" aria-label="Runner workspace">
           <div className="service-stack">
@@ -456,6 +500,17 @@ export function App() {
             <DiscrepancyDetail item={selectedDiscrepancy} />
           </aside>
         </section>
+
+        <CoverageMap
+          points={fixtures}
+          requests={cases}
+          currentRequest={currentCase}
+          summary={summary}
+          states={fixtureStates}
+          mapKeyAvailable={Boolean(hasTomTomApiKey)}
+          view={coverageView}
+          onViewChange={setCoverageView}
+        />
       </main>
 
       {showTomTomModal ? (

@@ -271,8 +271,36 @@ input {
 .run-controls {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.speed-control {
+  display: grid;
+  grid-template-columns: auto minmax(92px, 130px) minmax(52px, auto);
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #dbe3ea;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #526274;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.speed-control input {
+  width: 100%;
+  min-height: auto;
+  padding: 0;
+}
+
+.speed-control b {
+  color: #1d2a37;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .primary {
@@ -304,6 +332,21 @@ input {
   padding: 14px;
 }
 
+.coverage-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.coverage-header h2 {
+  margin: 2px 0 0;
+  color: #14202c;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
 .coverage-map {
   position: relative;
   aspect-ratio: 1 / 1;
@@ -315,6 +358,13 @@ input {
     linear-gradient(90deg, rgba(255, 255, 255, 0.55) 1px, transparent 1px) 0 0 / 56px 56px,
     linear-gradient(180deg, rgba(255, 255, 255, 0.55) 1px, transparent 1px) 0 0 / 56px 56px,
     linear-gradient(145deg, #d9edf0, #e6ecf3 54%, #dfe8df);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.coverage-map.dragging {
+  cursor: grabbing;
 }
 
 .tile-map,
@@ -325,21 +375,17 @@ input {
 
 .tile-map {
   z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 
 .tile-map img {
-  width: 100%;
-  height: 100%;
+  position: absolute;
   object-fit: fill;
   display: block;
 }
 
 .coverage-static-layer {
   z-index: 2;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .point {
@@ -351,6 +397,7 @@ input {
   margin: -7px 0 0 -7px;
   background: #64748b;
   box-shadow: 0 2px 8px rgba(22, 31, 43, 0.2);
+  pointer-events: auto;
 }
 
 .point.queued,
@@ -376,6 +423,96 @@ input {
 .point.blocked,
 .point-state.blocked {
   background: #a16207;
+}
+
+.map-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+}
+
+.map-controls button {
+  min-height: 32px;
+  border-color: rgba(203, 213, 225, 0.9);
+  background: rgba(248, 250, 252, 0.94);
+  box-shadow: 0 10px 24px rgba(22, 31, 43, 0.12);
+  font-size: 12px;
+}
+
+.map-controls button.active {
+  border-color: rgba(15, 118, 110, 0.45);
+  background: rgba(204, 251, 241, 0.94);
+  color: #0f5f59;
+}
+
+.map-progress {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  display: grid;
+  width: min(270px, calc(100% - 24px));
+  gap: 6px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 7px;
+  background: rgba(248, 250, 252, 0.94);
+  color: #223142;
+  padding: 9px 10px;
+  box-shadow: 0 10px 24px rgba(22, 31, 43, 0.12);
+}
+
+.map-progress-copy,
+.map-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.map-progress-copy span {
+  color: #526274;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.map-progress-copy strong {
+  color: #0f766e;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.map-progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.map-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #16a34a);
+}
+
+.map-progress-meta {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.map-progress code {
+  overflow: hidden;
+  color: #334155;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .map-legend {
@@ -473,6 +610,35 @@ input {
   text-align: right;
 }
 
+.non-location-row td:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.non-location-row strong {
+  color: #182533;
+  font-size: 13px;
+}
+
+.non-location-row span {
+  color: #627284;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.request-count {
+  display: inline-flex;
+  min-width: 78px;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e8eef5;
+  color: #46586a !important;
+  padding: 3px 8px;
+  font-size: 11px !important;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
 .point-state {
   display: inline-flex;
   min-width: 72px;
@@ -520,6 +686,12 @@ input {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.label-note {
+  color: #7f8d9b;
+  font-weight: 700;
+  text-transform: none;
 }
 
 .summary-item b {

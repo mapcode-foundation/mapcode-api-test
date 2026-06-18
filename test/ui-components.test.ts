@@ -2,9 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/ui/App";
 import { CoverageMap } from "../src/ui/components/CoverageMap";
+import { DiscrepancyDetail } from "../src/ui/components/DiscrepancyDetail";
 import { ReportDialog } from "../src/ui/components/ReportDialog";
 import { ServicePane } from "../src/ui/components/ServicePane";
-import type { FixturePoint, RequestCase, ServiceResponse } from "../src/shared/types";
+import type { FixturePoint, RequestCase, RunSummary, ServiceResponse } from "../src/shared/types";
 
 const request: RequestCase = {
   id: "precision-case",
@@ -13,6 +14,17 @@ const request: RequestCase = {
   query: { precision: "8", include: "territory,alphabet" },
   format: "json",
   expectation: "parity"
+};
+
+const summary: RunSummary = {
+  runId: "run-test",
+  profile: "Fast",
+  seed: 20260617,
+  totalCases: 40,
+  completedCases: 12,
+  failures: 2,
+  roundTrips: 6,
+  maxDriftMeters: 0
 };
 
 describe("ServicePane", () => {
@@ -35,6 +47,15 @@ describe("ServicePane", () => {
   });
 });
 
+describe("DiscrepancyDetail", () => {
+  it("explains how to read canonical diff lines", () => {
+    const markup = renderToStaticMarkup(createElement(DiscrepancyDetail, {}));
+
+    expect(markup).toContain("Canonical diff");
+    expect(markup).toContain("path: Java canonical value -&gt; TypeScript canonical value");
+  });
+});
+
 describe("App shell", () => {
   it("offers only Fast and Deep profiles and uses the updated service labels", () => {
     const markup = renderToStaticMarkup(createElement(App));
@@ -47,6 +68,13 @@ describe("App shell", () => {
     expect(markup).toContain("Java API (leading) not started");
     expect(markup).toContain("TypeScript API (ported) not started");
     expect(markup).not.toContain("Java API (leading) unknown");
+  });
+
+  it("disables Start while APIs are not operational", () => {
+    const markup = renderToStaticMarkup(createElement(App));
+
+    expect(markup).toMatch(/<button type="button" class="primary"[^>]*disabled=""/);
+    expect(markup).toContain(">Start</button>");
   });
 });
 
@@ -75,6 +103,9 @@ describe("CoverageMap", () => {
     const markup = renderToStaticMarkup(
       createElement(CoverageMap, {
         points,
+        requests: [],
+        currentRequest: { ...request, id: "capital-nld-amsterdam:codes:json", fixtureId: "capital-nld-amsterdam" },
+        summary,
         states: { "capital-nld-amsterdam": "queued" },
         mapKeyAvailable: true,
         view: "map",
@@ -88,12 +119,22 @@ describe("CoverageMap", () => {
     expect(markup).toContain("/api/tomtom/tile/1/0/0.png");
     expect(markup).toContain("Map point legend");
     expect(markup).toContain("Queued");
+    expect(markup).toContain("Full overview");
+    expect(markup).toContain("Tracking request");
+    expect(markup).toContain("Map progress");
+    expect(markup).toContain("12/40 cases");
+    expect(markup).toContain("30%");
+    expect(markup).toContain("2 failures");
+    expect(markup).toContain("capital-nld-amsterdam:codes:json");
+    expect(markup.indexOf("Coverage view")).toBeLessThan(markup.indexOf("Coverage map preview"));
   });
 
   it("hides generated global raster points from the map layer", () => {
     const markup = renderToStaticMarkup(
       createElement(CoverageMap, {
         points,
+        requests: [],
+        summary,
         states: { "capital-nld-amsterdam": "queued", "raster-000-000": "queued" },
         mapKeyAvailable: true,
         view: "map",
@@ -103,6 +144,29 @@ describe("CoverageMap", () => {
 
     expect(markup).toContain("1 global raster points are hidden on the map");
     expect(markup).not.toContain('title="Global raster 1/1"');
+  });
+
+  it("adds an aggregate row for non-location requests in the fixture table", () => {
+    const markup = renderToStaticMarkup(
+      createElement(CoverageMap, {
+        points,
+        requests: [
+          { ...request, id: "capital-nld-amsterdam:codes:json", fixtureId: "capital-nld-amsterdam" },
+          { ...request, id: "version-json", path: "/mapcode/version", expectation: "version-shape" },
+          { ...request, id: "codes-missing-json", path: "/mapcode/codes", expectation: "contract-error" }
+        ],
+        summary,
+        states: { "capital-nld-amsterdam": "queued" },
+        mapKeyAvailable: true,
+        view: "table",
+        onViewChange: () => undefined
+      })
+    );
+
+    expect(markup).toContain("Non-location requests");
+    expect(markup).toContain("version-json");
+    expect(markup).toContain("codes-missing-json");
+    expect(markup).toContain("2 requests");
   });
 });
 
