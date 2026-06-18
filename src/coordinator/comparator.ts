@@ -18,7 +18,7 @@ export function compareResponses(
     });
   }
 
-  if (options.format) {
+  if (options.format && !isStatusEndpoint(path)) {
     diffs.push(...compareContentTypes(java, typescript, options.format));
   }
 
@@ -126,6 +126,10 @@ function expectedContentType(format: ApiFormat): string {
 
 function isVersionEndpoint(path: string): boolean {
   return path === "/mapcode/version" || path === "/mapcode/json/version" || path === "/mapcode/xml/version";
+}
+
+function isStatusEndpoint(path: string): boolean {
+  return path === "/mapcode/status" || path === "/mapcode/json/status" || path === "/mapcode/xml/status";
 }
 
 function isVolatilePresenceOnlyPath(path: string): boolean {

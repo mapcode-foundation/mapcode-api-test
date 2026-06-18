@@ -114,6 +114,17 @@ describe("compareResponses", () => {
 
     expect(diffs.map((diff) => diff.path)).toEqual(["$.java.contentType", "$.typescript.contentType"]);
   });
+
+  it("does not require formatted content types for empty /mapcode/status health responses", () => {
+    const diffs = compareResponses(
+      response("java", null, 200, ""),
+      response("typescript", null, 200, "text/plain; charset=utf-8"),
+      "/mapcode/status",
+      { format: "json" }
+    );
+
+    expect(diffs).toEqual([]);
+  });
 });
 
 describe("roundTripWithinTolerance", () => {
