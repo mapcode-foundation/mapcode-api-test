@@ -143,16 +143,36 @@ test("dashboard opens service configuration from a service chip", async ({ page 
   await page.goto("/");
   await page.getByRole("button", { name: /Java API \(leading\)/ }).click();
 
-  await expect(page.getByRole("dialog", { name: "Java API (leading)" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start automatically" })).toBeVisible();
-  const statusText = await page.getByRole("status").innerText();
+  const dialog = page.getByRole("dialog", { name: "Java API (leading)" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Save settings" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  const statusText = await dialog.getByRole("status").innerText();
   expect(["not started", "starting", "operational", "failed"]).toContain(statusText.trim());
   await expect(page.getByLabel("Specify URL/port")).toHaveValue("http://127.0.0.1:8081");
   await expect(page.getByLabel("Source repository path")).toHaveValue("../mapcode-rest-service");
+  await expect(page.locator(".service-log")).toContainText("No service logs yet.");
 });
 
-test("dashboard closes service configuration after automatic start is operational", async ({ page }) => {
+test("dashboard auto-starts both APIs from the main screen", async ({ page }) => {
+  const calls: unknown[] = [];
+  await page.route("**/api/services/java/start", async (route) => {
+    calls.push({ kind: "java", payload: route.request().postDataJSON() });
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "java",
+        label: "Java API (leading)",
+        mode: "auto",
+        baseUrl: "http://127.0.0.1:8081",
+        sourcePath: "../mapcode-rest-service",
+        availability: "available",
+        logs: ["java started"]
+      })
+    });
+  });
   await page.route("**/api/services/typescript/start", async (route) => {
+    calls.push({ kind: "typescript", payload: route.request().postDataJSON() });
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -168,11 +188,48 @@ test("dashboard closes service configuration after automatic start is operationa
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: /TypeScript API \(ported\)/ }).click();
-  await page.getByRole("button", { name: "Start automatically" }).click();
+  await page.getByRole("button", { name: "Auto-start APIs" }).click();
 
-  await expect(page.getByRole("dialog", { name: "TypeScript API (ported)" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Java API (leading) operational" })).toBeVisible();
   await expect(page.getByRole("button", { name: "TypeScript API (ported) operational" })).toBeVisible();
+  expect(calls).toEqual([
+    {
+      kind: "java",
+      payload: { baseUrl: "http://127.0.0.1:8081", sourcePath: "../mapcode-rest-service" }
+    },
+    {
+      kind: "typescript",
+      payload: { baseUrl: "http://127.0.0.1:8082", sourcePath: "../mapcode-rest-service-ts" }
+    }
+  ]);
+});
+
+test("dashboard keeps service dialog open when starting one API from the dialog", async ({ page }) => {
+  await page.route("**/api/services/typescript/start", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "typescript",
+        label: "TypeScript API (ported)",
+        mode: "auto",
+        baseUrl: "http://127.0.0.1:9082",
+        sourcePath: "/tmp/mapcode-rest-service-ts",
+        availability: "available",
+        logs: ["started"]
+      })
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /TypeScript API \(ported\)/ }).click();
+  const dialog = page.getByRole("dialog", { name: "TypeScript API (ported)" });
+  await page.getByLabel("Specify URL/port").fill("http://127.0.0.1:9082");
+  await page.getByLabel("Source repository path").fill("/tmp/mapcode-rest-service-ts");
+  await dialog.getByRole("button", { name: "Start", exact: true }).click();
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("status")).toContainText("operational");
+  await expect(page.locator(".service-log")).toContainText("started");
 });
 
 test("dashboard renders TomTom tile images behind coverage points", async ({ page }) => {
@@ -427,6 +484,15 @@ test("dashboard map tracks current request by default and can toggle tracking of
 });
 
 test("dashboard opens an immediate report preview modal after saving", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () => Promise.reject(new Error("denied"))
+      }
+    });
+    document.execCommand = () => true;
+  });
   await page.route("**/api/report/save", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -446,6 +512,8 @@ test("dashboard opens an immediate report preview modal after saving", async ({ 
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy to Clipboard" })).toBeVisible();
   await expect(page.getByText("No discrepancies recorded.")).toBeVisible();
+  await page.getByRole("button", { name: "Copy to Clipboard" }).click();
+  await expect(page.getByRole("status")).toContainText("Copied to clipboard");
 });
 
 test("dashboard can skip a missing TomTom key and continue with fixture table fallback", async ({ page }) => {

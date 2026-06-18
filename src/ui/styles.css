@@ -129,6 +129,22 @@ h1 {
   gap: 8px;
 }
 
+.auto-start-button {
+  min-height: 28px;
+  border: 1px solid #b7d9ed;
+  border-radius: 999px;
+  background: #ecf7ff;
+  color: #075985;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.auto-start-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .status-chip,
 .pill,
 .catalog-count {
@@ -968,9 +984,17 @@ input {
 
 .modal-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 2px;
+}
+
+.copy-status {
+  color: #166534;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .report-modal,

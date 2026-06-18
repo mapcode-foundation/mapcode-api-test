@@ -90,6 +90,7 @@ export function App() {
   const [serviceDraftUrl, setServiceDraftUrl] = useState("");
   const [serviceDraftSourcePath, setServiceDraftSourcePath] = useState("");
   const [serviceMessage, setServiceMessage] = useState("");
+  const [isAutoStartingServices, setIsAutoStartingServices] = useState(false);
   const [loadMessage, setLoadMessage] = useState("Loading coordinator state");
 
   useEffect(() => {
@@ -342,15 +343,15 @@ export function App() {
   }
 
   async function handleManualService(kind: ServiceKind): Promise<void> {
-    setServiceMessage("Checking service URL");
+    setServiceMessage("Saving service settings");
     try {
       const service = await configureService(kind, serviceDraftUrl, serviceDraftSourcePath);
       setServices((current) => ({ ...current, [kind]: service }));
-      setServiceMessage(`${service.label} ${serviceProgressLabels[service.availability]}`);
+      setServiceMessage(`${service.label} settings saved; ${serviceProgressLabels[service.availability]}`);
     } catch {
       const serviceState = await getServices().catch(() => undefined);
       if (serviceState) setServices(serviceState);
-      setServiceMessage("Service did not respond with the Mapcode API help page.");
+      setServiceMessage("Service settings could not be saved.");
     }
   }
 
@@ -370,11 +371,41 @@ export function App() {
       const service = await startService(kind, serviceDraftUrl, serviceDraftSourcePath);
       setServices((current) => ({ ...current, [kind]: service }));
       setServiceMessage(`${service.label} ${serviceProgressLabels[service.availability]}`);
-      if (service.availability === "available") setConfiguringService(undefined);
     } catch {
       const serviceState = await getServices().catch(() => undefined);
       if (serviceState) setServices(serviceState);
-      setServiceMessage("Automatic start failed. Check the service logs below.");
+      setServiceMessage("Start failed. Check the service logs below.");
+    }
+  }
+
+  async function handleAutoStartServices(): Promise<void> {
+    setIsAutoStartingServices(true);
+    setLoadMessage("Starting APIs");
+    const startInputs = {
+      java: { baseUrl: services.java.baseUrl, sourcePath: services.java.sourcePath },
+      typescript: { baseUrl: services.typescript.baseUrl, sourcePath: services.typescript.sourcePath }
+    };
+
+    setServices((current) => ({
+      java: { ...current.java, mode: "auto", availability: "starting" },
+      typescript: { ...current.typescript, mode: "auto", availability: "starting" }
+    }));
+
+    try {
+      const results = await Promise.allSettled([
+        startService("java", startInputs.java.baseUrl, startInputs.java.sourcePath),
+        startService("typescript", startInputs.typescript.baseUrl, startInputs.typescript.sourcePath)
+      ]);
+      const nextServices = await getServices().catch(() => undefined);
+      setServices((current) => ({
+        java: results[0].status === "fulfilled" ? results[0].value : nextServices?.java ?? current.java,
+        typescript: results[1].status === "fulfilled" ? results[1].value : nextServices?.typescript ?? current.typescript
+      }));
+
+      const failed = results.filter((result) => result.status === "rejected").length;
+      setLoadMessage(failed === 0 ? "APIs started" : `${failed} API start failed`);
+    } finally {
+      setIsAutoStartingServices(false);
     }
   }
 
@@ -389,6 +420,14 @@ export function App() {
           </p>
         </div>
         <div className="service-health" aria-label="Service status">
+          <button
+            type="button"
+            className="auto-start-button"
+            disabled={isAutoStartingServices}
+            onClick={() => void handleAutoStartServices()}
+          >
+            {isAutoStartingServices ? "Starting APIs" : "Auto-start APIs"}
+          </button>
           {(["java", "typescript"] as const).map((kind) => (
             <ServiceStatusButton key={kind} service={services[kind]} onClick={() => openServiceConfig(kind)} />
           ))}
@@ -533,21 +572,41 @@ export function App() {
           onDraftSourcePathChange={setServiceDraftSourcePath}
           onClose={() => setConfiguringService(undefined)}
           onCheck={() => void handleCheckService(configuringService)}
-          onManual={() => void handleManualService(configuringService)}
-          onAutoStart={() => void handleAutoStartService(configuringService)}
+          onSave={() => void handleManualService(configuringService)}
+          onStart={() => void handleAutoStartService(configuringService)}
         />
       ) : null}
       {report ? (
         <ReportDialog
           report={report}
           onClose={() => setReport(undefined)}
-          onCopy={() => {
-            void navigator.clipboard.writeText(report.markdown);
-          }}
+          onCopy={() => copyTextToClipboard(report.markdown)}
         />
       ) : null}
     </div>
   );
+}
+
+async function copyTextToClipboard(value: string): Promise<void> {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+    await navigator.clipboard.writeText(value);
+    return;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, value.length);
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("Copy failed");
+  }
 }
 
 function isRunnerEvent(event: unknown): event is RunnerEvent {
@@ -593,8 +652,8 @@ function ServiceConfigDialog({
   onDraftSourcePathChange,
   onClose,
   onCheck,
-  onManual,
-  onAutoStart
+  onSave,
+  onStart
 }: {
   service: ServicesResponse[ServiceKind];
   draftUrl: string;
@@ -604,8 +663,8 @@ function ServiceConfigDialog({
   onDraftSourcePathChange: (value: string) => void;
   onClose: () => void;
   onCheck: () => void;
-  onManual: () => void;
-  onAutoStart: () => void;
+  onSave: () => void;
+  onStart: () => void;
 }) {
   return (
     <div className="modal-backdrop">
@@ -636,11 +695,11 @@ function ServiceConfigDialog({
             <button type="button" className="secondary" onClick={onCheck}>
               Check
             </button>
-            <button type="button" className="secondary" onClick={onManual}>
-              Use URL
+            <button type="button" className="secondary" onClick={onSave}>
+              Save settings
             </button>
-            <button type="button" className="primary" onClick={onAutoStart}>
-              Start automatically
+            <button type="button" className="primary" onClick={onStart}>
+              Start
             </button>
           </div>
           <div className={`service-progress ${service.availability}`} role="status">

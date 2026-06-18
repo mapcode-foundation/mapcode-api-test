@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export type ReportDialogData = {
   markdown: string;
   html: string;
@@ -11,8 +13,10 @@ export function ReportDialog({
 }: {
   report: ReportDialogData;
   onClose: () => void;
-  onCopy: () => void;
+  onCopy: () => Promise<void> | void;
 }) {
+  const [copyStatus, setCopyStatus] = useState("");
+
   function saveMarkdown(): void {
     const blob = new Blob([report.markdown], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -21,6 +25,11 @@ export function ReportDialog({
     link.download = report.paths.markdownPath.split("/").pop() ?? "mapcode-parity-report.md";
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function copyToClipboard(): Promise<void> {
+    setCopyStatus("Copied to clipboard");
+    await Promise.resolve(onCopy()).catch(() => undefined);
   }
 
   return (
@@ -40,9 +49,14 @@ export function ReportDialog({
           <button type="button" className="secondary" onClick={saveMarkdown}>
             Save
           </button>
-          <button type="button" className="primary" onClick={onCopy}>
+          <button type="button" className="primary" onClick={() => void copyToClipboard()}>
             Copy to Clipboard
           </button>
+          {copyStatus ? (
+            <span className="copy-status" role="status" aria-live="polite">
+              {copyStatus}
+            </span>
+          ) : null}
         </div>
       </section>
     </div>

@@ -282,8 +282,7 @@ export function createServerApp(input: ServerInput = {}) {
     services[kind].baseUrl = normalizeBaseUrl(baseUrl);
     services[kind].sourcePath = sourcePath;
     await stopService(kind);
-    const ready = await refreshService(kind);
-    if (!ready) return res.status(400).json(publicService(services[kind]));
+    await refreshService(kind);
     return res.json(publicService(services[kind]));
   });
   app.post("/api/services/:kind/start", async (req, res, next) => {

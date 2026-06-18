@@ -71,7 +71,7 @@ describe("coordinator server", () => {
     });
   });
 
-  it("stores a source repo path with manual service configuration", async () => {
+  it("stores a source repo path with service configuration before the API is running", async () => {
     const app = createServerApp({ env: {} });
     const response = await inject(app, "/api/services/typescript/config", {
       method: "POST",
@@ -79,7 +79,7 @@ describe("coordinator server", () => {
     });
     const services = await inject(app, "/api/services");
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(JSON.parse(services.body).typescript).toMatchObject({
       baseUrl: "http://127.0.0.1:9082",
       sourcePath: "/tmp/mapcode-rest-service-ts",
