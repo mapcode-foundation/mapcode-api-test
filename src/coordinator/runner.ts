@@ -62,7 +62,21 @@ export class Runner {
       while (this.paused && !this.stopped) await new Promise((resolve) => setTimeout(resolve, 100));
       if (this.stopped) break;
       if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "active" });
-      const { java, typescript } = await this.fetchPair(request);
+      let java: ServiceResponse;
+      let typescript: ServiceResponse;
+      try {
+        ({ java, typescript } = await this.fetchPair(request));
+      } catch (error) {
+        if (this.stopped) break;
+        this.summary.failures += 1;
+        this.summary.completedCases += 1;
+        const discrepancy = createInfrastructureDiscrepancy(request, error);
+        this.emit({ type: "discrepancy", discrepancy });
+        if (request.fixtureId) this.emit({ type: "point-state", fixtureId: request.fixtureId, state: "blocked" });
+        this.emitSummary();
+        continue;
+      }
+      if (this.stopped) break;
       this.emit({ type: "current-case", request, java, typescript });
       const diffs = compareResponses(java, typescript, request.path, {
         format: request.format,
@@ -108,4 +122,36 @@ function formatReplayPath(request: RequestCase): string {
   const params = new URLSearchParams(request.query ?? {});
   const query = params.toString();
   return query.length > 0 ? `${request.path}?${query}` : request.path;
+}
+
+function createInfrastructureDiscrepancy(request: RequestCase, error: unknown): Discrepancy {
+  const message = error instanceof Error ? error.message : "Request failed";
+  const failedResponse = (service: "java" | "typescript"): ServiceResponse => ({
+    service,
+    status: 0,
+    contentType: "",
+    body: message,
+    canonical: null
+  });
+
+  return {
+    id: `${request.id}:infrastructure-error`,
+    caseId: request.id,
+    fixtureId: request.fixtureId,
+    endpoint: request.path,
+    format: request.format,
+    status: "infrastructure-error",
+    summary: `Request failed before both services returned: ${message}`,
+    diffs: [
+      {
+        path: "$.infrastructure",
+        expected: "Java and TypeScript responses",
+        actual: message,
+        message: "Expected both services to return comparable responses"
+      }
+    ],
+    java: failedResponse("java"),
+    typescript: failedResponse("typescript"),
+    replay: `${request.method} ${formatReplayPath(request)}`
+  };
 }

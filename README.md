@@ -36,7 +36,7 @@ Default managed mode expects:
 - Java service: `../mapcode-rest-service`
 - TypeScript service: `../mapcode-rest-service-ts`
 
-Attached mode can be configured from the dashboard with Java and TypeScript base URLs.
+Attached service base URLs are accepted by the coordinator run API. Dashboard controls for editing those URLs are a follow-up.
 
 ## Reports
 

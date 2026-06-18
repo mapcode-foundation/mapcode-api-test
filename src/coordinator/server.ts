@@ -156,7 +156,10 @@ export function createServerApp(input: ServerInput = {}) {
   app.post("/api/run/stop", (_req, res) => {
     if (!activeRunner) return res.json({ state: "idle" });
     activeRunner.stop();
+    activeRunner = undefined;
+    activeRunToken += 1;
     runState = "stopped";
+    if (lastSummary) publish({ type: "run-complete", summary: lastSummary });
     return res.json({ state: runState });
   });
   app.post("/api/report/save", async (_req, res, next) => {
