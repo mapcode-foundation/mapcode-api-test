@@ -434,6 +434,14 @@ input {
   pointer-events: auto;
 }
 
+.point.raster-point {
+  width: 5px;
+  height: 5px;
+  border-width: 1px;
+  margin: -2.5px 0 0 -2.5px;
+  box-shadow: 0 1px 3px rgba(22, 31, 43, 0.18);
+}
+
 .point.queued,
 .point-state.queued {
   background: #64748b;
@@ -456,7 +464,7 @@ input {
 
 .point.blocked,
 .point-state.blocked {
-  background: #a16207;
+  background: #f97316;
 }
 
 .map-controls {

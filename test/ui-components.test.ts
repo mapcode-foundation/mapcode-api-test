@@ -130,7 +130,7 @@ describe("CoverageMap", () => {
     expect(markup.indexOf("Coverage view")).toBeLessThan(markup.indexOf("Coverage map preview"));
   });
 
-  it("hides generated global raster points from the map layer", () => {
+  it("hides queued global raster points from the map layer", () => {
     const markup = renderToStaticMarkup(
       createElement(CoverageMap, {
         points,
@@ -143,8 +143,26 @@ describe("CoverageMap", () => {
       })
     );
 
-    expect(markup).toContain("1 global raster points are hidden on the map");
+    expect(markup).toContain("1 queued global raster points are hidden on the map");
     expect(markup).not.toContain('title="Global raster 1/1"');
+  });
+
+  it("shows global raster points on the map once they have result states", () => {
+    const markup = renderToStaticMarkup(
+      createElement(CoverageMap, {
+        points,
+        requests: [],
+        summary,
+        states: { "capital-nld-amsterdam": "queued", "raster-000-000": "passed" },
+        mapKeyAvailable: true,
+        view: "map",
+        onViewChange: () => undefined
+      })
+    );
+
+    expect(markup).not.toContain("queued global raster points are hidden on the map");
+    expect(markup).toContain('class="point raster-point passed"');
+    expect(markup).toContain('title="Global raster 1/1"');
   });
 
   it("adds an aggregate row for non-location requests in the fixture table", () => {

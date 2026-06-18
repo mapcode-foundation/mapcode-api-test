@@ -153,15 +153,15 @@ function globalRasterPoints(): FixturePoint[] {
   const rows = 100;
   const cols = 100;
   for (let row = 0; row < rows; row += 1) {
-    const lat = -89.1 + row * 1.8;
     for (let col = 0; col < cols; col += 1) {
-      const lon = -178.2 + col * 3.6;
+      const lat = -90 + row * 1.8 + deterministicUnit(row, col, 0) * 1.8;
+      const lon = -180 + col * 3.6 + deterministicUnit(row, col, 1) * 3.6;
       points.push({
         id: `raster-${row.toString().padStart(3, "0")}-${col.toString().padStart(3, "0")}`,
         category: "country",
         label: `Global raster ${row + 1}/${col + 1}`,
-        lat: Number(lat.toFixed(6)),
-        lon: Number(lon.toFixed(6)),
+        lat: clamp(lat, -89.999, 89.999),
+        lon: wrapLon(lon),
         source: "global-raster"
       });
     }
@@ -192,4 +192,14 @@ function clamp(value: number, min: number, max: number): number {
 function wrapLon(value: number): number {
   const normalized = ((((value + 180) % 360) + 360) % 360) - 180;
   return Number(normalized.toFixed(6));
+}
+
+function deterministicUnit(row: number, col: number, salt: number): number {
+  let value = Math.imul(row + 1, 0x9e3779b1) ^ Math.imul(col + 1, 0x85ebca6b) ^ Math.imul(salt + 1, 0xc2b2ae35);
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x7feb352d);
+  value ^= value >>> 15;
+  value = Math.imul(value, 0x846ca68b);
+  value ^= value >>> 16;
+  return ((value >>> 0) + 0.5) / 0x1_0000_0000;
 }

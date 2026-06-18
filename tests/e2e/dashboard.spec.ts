@@ -604,6 +604,100 @@ test("dashboard map tracks current request by default and can toggle tracking of
   await expect(map).toHaveAttribute("data-center-lon", "36.8172");
 });
 
+test("dashboard applies a high-volume point-state event burst to visible map points", async ({ page }) => {
+  await page.addInitScript(() => {
+    const sources: { onmessage: ((message: { data: string }) => void) | null }[] = [];
+    class FakeEventSource {
+      onmessage: ((message: { data: string }) => void) | null = null;
+
+      constructor() {
+        sources.push(this);
+      }
+
+      close() {
+        const index = sources.indexOf(this);
+        if (index >= 0) sources.splice(index, 1);
+      }
+    }
+
+    window.EventSource = FakeEventSource as unknown as typeof EventSource;
+    (window as typeof window & { __emitDashboardEvents?: (events: unknown[]) => void }).__emitDashboardEvents = (events: unknown[]) => {
+      for (const event of events) {
+        for (const source of sources) {
+          source.onmessage?.({ data: JSON.stringify(event) });
+        }
+      }
+    };
+  });
+  await page.route("**/api/config", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ hasTomTomApiKey: true }) });
+  });
+  const rasterPoints = Array.from({ length: 2500 }, (_, index) => ({
+    id: `raster-${index.toString().padStart(4, "0")}`,
+    category: "country",
+    label: `Raster ${index}`,
+    lat: -80 + (index % 160),
+    lon: -170 + (index % 340),
+    source: "global-raster"
+  }));
+  await page.route("**/api/fixtures**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        seed: 20260617,
+        points: [
+          {
+            id: "capital-nld-amsterdam",
+            category: "capital",
+            label: "Amsterdam, NLD",
+            lat: 52.376514,
+            lon: 4.908543,
+            territory: "NLD",
+            source: "test"
+          },
+          ...rasterPoints
+        ]
+      })
+    });
+  });
+  await page.route("**/api/cases**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: "capital-nld-amsterdam:codes:json",
+          fixtureId: "capital-nld-amsterdam",
+          method: "GET",
+          path: "/mapcode/codes/52.376514,4.908543",
+          format: "json",
+          expectation: "parity"
+        }
+      ])
+    });
+  });
+  await page.route("**/api/tomtom/tile/**", async (route) => {
+    await route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+        "base64"
+      )
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator('.coverage-static-layer .point[title="Amsterdam, NLD"]')).toHaveClass(/queued/);
+
+  await page.evaluate((ids) => {
+    const events = ids.map((fixtureId) => ({ type: "point-state", fixtureId, state: "passed" }));
+    events.push({ type: "point-state", fixtureId: "capital-nld-amsterdam", state: "passed" });
+    (window as typeof window & { __emitDashboardEvents?: (events: unknown[]) => void }).__emitDashboardEvents?.(events);
+  }, rasterPoints.map((point) => point.id));
+
+  await expect(page.locator('.coverage-static-layer .point[title="Amsterdam, NLD"]')).toHaveClass(/passed/);
+  await expect(page.locator('.coverage-static-layer .point[title="Raster 0"]')).toHaveClass(/passed/);
+});
+
 test("dashboard opens an immediate report preview modal after saving", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {

@@ -56,7 +56,10 @@ export function CoverageMap({ points, requests, currentRequest, summary, states,
   const [mapSize, setMapSize] = useState<MapSize>({ width: 720, height: 720 });
   const [isDragging, setIsDragging] = useState(false);
   const [isTrackingRequest, setIsTrackingRequest] = useState(true);
-  const mapPoints = useMemo(() => points.filter((point) => point.source !== "global-raster"), [points]);
+  const mapPoints = useMemo(
+    () => points.filter((point) => point.source !== "global-raster" || stateFor(point, states) !== "queued"),
+    [points, states]
+  );
   const nonLocationRequests = useMemo(() => requests.filter((request) => !request.fixtureId), [requests]);
   const currentPoint = useMemo(
     () => mapPoints.find((point) => point.id === currentRequest?.fixtureId),
@@ -65,7 +68,10 @@ export function CoverageMap({ points, requests, currentRequest, summary, states,
   const viewBounds = useMemo(() => boundsForViewport(viewport, mapSize), [mapSize, viewport]);
   const tileZoom = useMemo(() => Math.ceil(viewport.zoom), [viewport.zoom]);
   const visibleTiles = useMemo(() => tilesForBounds(tileZoom, viewBounds), [tileZoom, viewBounds]);
-  const hiddenRasterCount = points.length - mapPoints.length;
+  const hiddenRasterCount = useMemo(
+    () => points.filter((point) => point.source === "global-raster" && stateFor(point, states) === "queued").length,
+    [points, states]
+  );
   const queuedCount = useMemo(
     () => mapPoints.filter((point) => stateFor(point, states) === "queued").length,
     [mapPoints, states]
@@ -264,7 +270,7 @@ export function CoverageMap({ points, requests, currentRequest, summary, states,
           {mapPoints.map((point) => (
             <span
               key={point.id}
-              className={`point ${stateFor(point, states)}`}
+              className={`point ${point.source === "global-raster" ? "raster-point " : ""}${stateFor(point, states)}`}
               title={point.label}
               onPointerDown={(event) => event.stopPropagation()}
               onDoubleClick={(event) => {
@@ -315,7 +321,7 @@ export function CoverageMap({ points, requests, currentRequest, summary, states,
       </div>
       <div className="coverage-side">
         <p>{queuedCount} queued fixture points are pinned for this profile.</p>
-        {hiddenRasterCount > 0 ? <p>{hiddenRasterCount.toLocaleString()} global raster points are hidden on the map.</p> : null}
+        {hiddenRasterCount > 0 ? <p>{hiddenRasterCount.toLocaleString()} queued global raster points are hidden on the map.</p> : null}
       </div>
     </section>
   );

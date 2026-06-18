@@ -79,6 +79,8 @@ export function App() {
   const [runState, setRunState] = useState<RunState>("idle");
   const runStateRef = useRef<RunState>("idle");
   const runControlTokenRef = useRef(0);
+  const pendingPointStatesRef = useRef<Record<string, PointState>>({});
+  const pointStateFrameRef = useRef<number | undefined>(undefined);
   const pendingStartRef = useRef<Promise<void> | undefined>(undefined);
   const [requestDelaySeconds, setRequestDelaySeconds] = useState(0);
   const [report, setReport] = useState<ReportDialogData | undefined>();
@@ -100,7 +102,7 @@ export function App() {
         setHasTomTomApiKey(config.hasTomTomApiKey);
         setCoverageView(config.hasTomTomApiKey ? "map" : "table");
         setFixtures(fixtureSet.points);
-        setFixtureStates(queuedFixtureStates(fixtureSet.points));
+        resetFixtureStates(fixtureSet.points);
         setServices(serviceState);
         setSummary((current) => ({ ...current, seed: fixtureSet.seed }));
         setLoadMessage(`${fixtureSet.points.length} fixtures pinned`);
@@ -129,7 +131,7 @@ export function App() {
         setCurrentRequest(undefined);
         setJavaResponse(undefined);
         setTypeScriptResponse(undefined);
-        setFixtureStates(queuedFixtureStates(fixtureSet.points));
+        resetFixtureStates(fixtureSet.points);
         setSummary((current) => ({
           ...current,
           seed: fixtureSet.seed,
@@ -154,6 +156,13 @@ export function App() {
   }, [profile]);
 
   useEffect(() => connectEvents(handleRunnerEvent), []);
+
+  useEffect(
+    () => () => {
+      if (pointStateFrameRef.current !== undefined) window.cancelAnimationFrame(pointStateFrameRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -206,7 +215,7 @@ export function App() {
         setSummary(event.summary);
         break;
       case "point-state":
-        setFixtureStates((current) => ({ ...current, [event.fixtureId]: event.state }));
+        queuePointState(event.fixtureId, event.state);
         break;
       case "current-case":
         setCurrentRequest(event.request);
@@ -238,6 +247,27 @@ export function App() {
     }
   }
 
+  function queuePointState(fixtureId: string, state: PointState): void {
+    pendingPointStatesRef.current[fixtureId] = state;
+    if (pointStateFrameRef.current !== undefined) return;
+
+    pointStateFrameRef.current = window.requestAnimationFrame(() => {
+      pointStateFrameRef.current = undefined;
+      const nextStates = pendingPointStatesRef.current;
+      pendingPointStatesRef.current = {};
+      setFixtureStates((current) => ({ ...current, ...nextStates }));
+    });
+  }
+
+  function resetFixtureStates(points: FixturePoint[]): void {
+    if (pointStateFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(pointStateFrameRef.current);
+      pointStateFrameRef.current = undefined;
+    }
+    pendingPointStatesRef.current = {};
+    setFixtureStates(queuedFixtureStates(points));
+  }
+
   async function handleStart(): Promise<void> {
     const runControlToken = runControlTokenRef.current + 1;
     runControlTokenRef.current = runControlToken;
@@ -246,7 +276,7 @@ export function App() {
     setCurrentRequest(undefined);
     setJavaResponse(undefined);
     setTypeScriptResponse(undefined);
-    setFixtureStates(queuedFixtureStates(fixtures));
+    resetFixtureStates(fixtures);
     setReport(undefined);
 
     const startTask = (async () => {

@@ -47,4 +47,32 @@ describe("fixture-store", () => {
     expect(deepSet.points.some((point) => point.lat > 80)).toBe(true);
     expect(deepSet.points.some((point) => point.lat < -80)).toBe(true);
   });
+
+  it("jitters global raster points within their deterministic cells", async () => {
+    const set = await loadFixtureSet("fixtures/fixture-set.json");
+    const rasterPoints = resolveFixtureSet(set, "Deep").points.filter((point) => point.source === "global-raster");
+    const firstRowLatitudes = new Set(
+      rasterPoints.filter((point) => point.id.startsWith("raster-000-")).map((point) => point.lat)
+    );
+    const firstColumnLongitudes = new Set(
+      rasterPoints.filter((point) => point.id.endsWith("-000")).map((point) => point.lon)
+    );
+
+    expect(firstRowLatitudes.size).toBeGreaterThan(50);
+    expect(firstColumnLongitudes.size).toBeGreaterThan(50);
+    expect(rasterPoints.find((point) => point.id === "raster-000-000")).toMatchObject({
+      lat: expect.any(Number),
+      lon: expect.any(Number)
+    });
+  });
+
+  it("generates requests for every visible deep map point", async () => {
+    const set = await loadFixtureSet("fixtures/fixture-set.json");
+    const deepSet = resolveFixtureSet(set, "Deep");
+    const requestedFixtureIds = new Set(expandFixtureCases(set, "Deep").flatMap((item) => (item.fixtureId ? [item.fixtureId] : [])));
+    const visibleMapPointIds = deepSet.points.filter((point) => point.source !== "global-raster").map((point) => point.id);
+
+    expect(visibleMapPointIds.length).toBeGreaterThan(300);
+    expect(visibleMapPointIds.filter((id) => !requestedFixtureIds.has(id))).toEqual([]);
+  });
 });
