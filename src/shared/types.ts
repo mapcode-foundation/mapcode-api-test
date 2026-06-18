@@ -1,8 +1,10 @@
 export type ApiFormat = "json" | "xml";
 export type HttpMethod = "GET";
-export type RunProfileName = "Fast" | "Deep" | "Custom";
+export type RunProfileName = "Fast" | "Deep";
 export type PointState = "queued" | "active" | "passed" | "failed" | "blocked";
 export type ServiceKind = "java" | "typescript";
+export type ServiceMode = "manual" | "auto";
+export type ServiceAvailability = "unknown" | "starting" | "available" | "unavailable";
 
 export interface FixturePoint {
   id: string;
@@ -30,6 +32,15 @@ export interface ServiceResponse {
   contentType: string;
   body: string;
   canonical?: CanonicalValue;
+}
+
+export interface ServiceStatus {
+  kind: ServiceKind;
+  label: string;
+  mode: ServiceMode;
+  baseUrl: string;
+  availability: ServiceAvailability;
+  logs: string[];
 }
 
 export type CanonicalValue =
@@ -79,4 +90,5 @@ export type RunnerEvent =
   | { type: "current-case"; java?: ServiceResponse; typescript?: ServiceResponse; request: RequestCase }
   | { type: "discrepancy"; discrepancy: Discrepancy }
   | { type: "service-log"; service: ServiceKind; line: string }
+  | { type: "service-status"; services: Record<ServiceKind, ServiceStatus> }
   | { type: "run-complete"; summary: RunSummary };

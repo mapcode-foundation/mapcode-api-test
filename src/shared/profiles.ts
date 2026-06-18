@@ -16,6 +16,5 @@ export const RUN_PROFILES: Record<RunProfileName, RunProfile> = {
     maxCountryPoints: Number.POSITIVE_INFINITY,
     maxOceanPoints: Number.POSITIVE_INFINITY,
     includeRoundTrips: true
-  },
-  Custom: { name: "Custom", maxCapitalPoints: 25, maxCountryPoints: 50, maxOceanPoints: 16, includeRoundTrips: true }
+  }
 };

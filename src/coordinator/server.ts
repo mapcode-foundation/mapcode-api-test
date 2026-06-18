@@ -1,21 +1,37 @@
 import express, { type Response } from "express";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
-import { loadFixtureSet, expandFixtureCases } from "./fixture-store";
+import { loadFixtureSet, expandFixtureCases, resolveFixtureSet } from "./fixture-store";
 import { writeReports } from "./reporter";
 import { Runner } from "./runner";
-import type { Discrepancy, RunProfileName, RunnerEvent, RunSummary } from "../shared/types";
+import { isReady } from "./service-manager";
+import type {
+  Discrepancy,
+  RunProfileName,
+  RunnerEvent,
+  RunSummary,
+  ServiceAvailability,
+  ServiceKind,
+  ServiceMode,
+  ServiceStatus
+} from "../shared/types";
 
 export interface ServerInput {
   env?: NodeJS.ProcessEnv;
 }
 
 type RunState = "idle" | "running" | "paused" | "stopped";
+type ServiceState = ServiceStatus & { child?: ChildProcessWithoutNullStreams };
 
 const defaultJavaBaseUrl = "http://127.0.0.1:8081";
 const defaultTypeScriptBaseUrl = "http://127.0.0.1:8082";
 const defaultSeed = 20260617;
+const serviceLabels: Record<ServiceKind, string> = {
+  java: "Java API (leading)",
+  typescript: "TypeScript API (ported)"
+};
 
 export function createServerApp(input: ServerInput = {}) {
   loadEnv();
@@ -28,6 +44,24 @@ export function createServerApp(input: ServerInput = {}) {
   let lastProfile: RunProfileName = "Fast";
   let lastSeed = defaultSeed;
   let discrepancies: Discrepancy[] = [];
+  const services: Record<ServiceKind, ServiceState> = {
+    java: {
+      kind: "java",
+      label: serviceLabels.java,
+      mode: "manual",
+      baseUrl: defaultJavaBaseUrl,
+      availability: "unknown",
+      logs: []
+    },
+    typescript: {
+      kind: "typescript",
+      label: serviceLabels.typescript,
+      mode: "manual",
+      baseUrl: defaultTypeScriptBaseUrl,
+      availability: "unknown",
+      logs: []
+    }
+  };
   const sseClients = new Set<Response>();
   const app = express();
   app.use(express.json());
@@ -55,6 +89,87 @@ export function createServerApp(input: ServerInput = {}) {
     publish(event);
   }
 
+  function publicServices(): Record<ServiceKind, ServiceStatus> {
+    return {
+      java: publicService(services.java),
+      typescript: publicService(services.typescript)
+    };
+  }
+
+  function publicService(service: ServiceState): ServiceStatus {
+    return {
+      kind: service.kind,
+      label: service.label,
+      mode: service.mode,
+      baseUrl: service.baseUrl,
+      availability: service.availability,
+      logs: service.logs.slice(-40)
+    };
+  }
+
+  function setServiceAvailability(kind: ServiceKind, availability: ServiceAvailability): void {
+    services[kind].availability = availability;
+    publish({ type: "service-status", services: publicServices() });
+  }
+
+  function addServiceLog(kind: ServiceKind, line: string): void {
+    const service = services[kind];
+    service.logs.push(line);
+    service.logs = service.logs.slice(-120);
+    publish({ type: "service-log", service: kind, line });
+  }
+
+  async function refreshService(kind: ServiceKind): Promise<boolean> {
+    const ready = await isReady(services[kind].baseUrl);
+    setServiceAvailability(kind, ready ? "available" : "unavailable");
+    return ready;
+  }
+
+  async function unavailableServiceLabels(): Promise<string[]> {
+    const [javaReady, typescriptReady] = await Promise.all([refreshService("java"), refreshService("typescript")]);
+    const unavailable: string[] = [];
+    if (!javaReady) unavailable.push(serviceLabels.java);
+    if (!typescriptReady) unavailable.push(serviceLabels.typescript);
+    return unavailable;
+  }
+
+  async function startService(kind: ServiceKind): Promise<ServiceStatus> {
+    const service = services[kind];
+    await stopService(kind);
+    service.mode = "auto";
+    setServiceAvailability(kind, "starting");
+    addServiceLog(kind, `Starting ${service.label} at ${service.baseUrl}`);
+
+    const command = startCommand(kind, service.baseUrl);
+    const child = spawn(command.command, command.args, {
+      cwd: command.cwd,
+      env: { ...process.env, ...command.env }
+    });
+    service.child = child;
+    child.stdout.on("data", (chunk) => addServiceLog(kind, String(chunk).trim()));
+    child.stderr.on("data", (chunk) => addServiceLog(kind, String(chunk).trim()));
+    child.on("exit", (code, signal) => {
+      if (service.child !== child) return;
+      service.child = undefined;
+      if (service.availability === "starting" || service.availability === "available") {
+        setServiceAvailability(kind, "unavailable");
+      }
+      addServiceLog(kind, `${service.label} exited with ${signal ?? code ?? "unknown status"}`);
+    });
+
+    const ready = await waitForServiceReady(service.baseUrl);
+    setServiceAvailability(kind, ready ? "available" : "unavailable");
+    if (!ready) addServiceLog(kind, `${service.label} did not become available at ${service.baseUrl}`);
+    return publicService(service);
+  }
+
+  async function stopService(kind: ServiceKind): Promise<void> {
+    const child = services[kind].child;
+    if (!child) return;
+    services[kind].child = undefined;
+    child.kill("SIGTERM");
+  }
+
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
   app.get("/api/events", (req, res) => {
     res.writeHead(200, {
@@ -69,6 +184,11 @@ export function createServerApp(input: ServerInput = {}) {
   app.get("/api/config", (_req, res) =>
     res.json({ hasTomTomApiKey: Boolean(env.TOMTOM_API_KEY || runtimeTomTomApiKey) })
   );
+  app.get("/api/config/tomtom-map-key", (_req, res) => {
+    const key = runtimeTomTomApiKey || env.TOMTOM_API_KEY;
+    if (!key) return res.status(404).json({ error: "TomTom map key unavailable" });
+    return res.json({ key });
+  });
   app.post("/api/config/tomtom-key", (req, res) => {
     const key = typeof req.body?.key === "string" ? req.body.key.trim() : "";
     if (key.length < 8) return res.status(400).json({ error: "TomTom API key is too short" });
@@ -77,31 +197,67 @@ export function createServerApp(input: ServerInput = {}) {
   });
   app.get("/api/fixtures", async (_req, res, next) => {
     try {
+      const profile = parseProfile(_req.query.profile);
       const fixtureSet = await loadFixtureSet("fixtures/fixture-set.json");
-      res.json(fixtureSet);
+      res.json(resolveFixtureSet(fixtureSet, profile));
     } catch (error) {
       next(error);
     }
   });
   app.get("/api/cases", async (req, res, next) => {
     try {
-      const profile = req.query.profile === "Deep" || req.query.profile === "Custom" ? req.query.profile : "Fast";
+      const profile = parseProfile(req.query.profile);
       const fixtureSet = await loadFixtureSet("fixtures/fixture-set.json");
       res.json(expandFixtureCases(fixtureSet, profile));
     } catch (error) {
       next(error);
     }
   });
+  app.get("/api/services", (_req, res) => res.json(publicServices()));
+  app.post("/api/services/:kind/check", async (req, res) => {
+    const kind = parseServiceKind(req.params.kind);
+    if (!kind) return res.status(404).json({ error: "Unknown service" });
+    await refreshService(kind);
+    return res.json(publicService(services[kind]));
+  });
+  app.post("/api/services/:kind/config", async (req, res) => {
+    const kind = parseServiceKind(req.params.kind);
+    if (!kind) return res.status(404).json({ error: "Unknown service" });
+    const baseUrl = readBodyString(req.body?.baseUrl, services[kind].baseUrl);
+    services[kind].mode = "manual";
+    services[kind].baseUrl = normalizeBaseUrl(baseUrl);
+    await stopService(kind);
+    const ready = await refreshService(kind);
+    if (!ready) return res.status(400).json(publicService(services[kind]));
+    return res.json(publicService(services[kind]));
+  });
+  app.post("/api/services/:kind/start", async (req, res, next) => {
+    try {
+      const kind = parseServiceKind(req.params.kind);
+      if (!kind) return res.status(404).json({ error: "Unknown service" });
+      if (typeof req.body?.baseUrl === "string") services[kind].baseUrl = normalizeBaseUrl(req.body.baseUrl);
+      const service = await startService(kind);
+      return res.status(service.availability === "available" ? 200 : 500).json(service);
+    } catch (error) {
+      next(error);
+    }
+  });
   app.post("/api/run/start", async (req, res, next) => {
     try {
+      const unavailable = await unavailableServiceLabels();
+      if (unavailable.length > 0) {
+        runState = "stopped";
+        return res.status(409).json({ error: "APIs unavailable", unavailable });
+      }
+
       activeRunner?.stop();
       activeRunToken += 1;
 
       const fixtureSet = await loadFixtureSet("fixtures/fixture-set.json");
       const profile = parseProfile(req.body?.profile);
       const cases = expandFixtureCases(fixtureSet, profile);
-      const javaBaseUrl = readBodyString(req.body?.javaBaseUrl, defaultJavaBaseUrl);
-      const typescriptBaseUrl = readBodyString(req.body?.typescriptBaseUrl, defaultTypeScriptBaseUrl);
+      const javaBaseUrl = services.java.baseUrl;
+      const typescriptBaseUrl = services.typescript.baseUrl;
       const token = activeRunToken;
       const runner = new Runner({
         javaBaseUrl,
@@ -184,7 +340,11 @@ export function createServerApp(input: ServerInput = {}) {
 }
 
 function parseProfile(value: unknown): RunProfileName {
-  return value === "Deep" || value === "Custom" ? value : "Fast";
+  return value === "Deep" ? value : "Fast";
+}
+
+function parseServiceKind(value: string): ServiceKind | undefined {
+  return value === "java" || value === "typescript" ? value : undefined;
 }
 
 function readBodyString(value: unknown, fallback: string): string {
@@ -206,4 +366,65 @@ function fallbackSummary(profile: RunProfileName, seed: number, failures: number
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown run error";
+}
+
+function normalizeBaseUrl(value: string): string {
+  const url = new URL(value);
+  url.pathname = "";
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
+
+function portFromBaseUrl(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  return url.port || (url.protocol === "https:" ? "443" : "80");
+}
+
+function startCommand(
+  kind: ServiceKind,
+  baseUrl: string
+): { command: string; args: string[]; cwd: string; env: Record<string, string> } {
+  const port = portFromBaseUrl(baseUrl);
+  if (kind === "typescript") {
+    return {
+      command: "npm",
+      args: ["run", "dev"],
+      cwd: resolve("../mapcode-rest-service-ts"),
+      env: {
+        PORT: port,
+        MAPCODE_BORDERS_PATH: resolve("../mapcode-rest-service-ts/data/borders.fgb")
+      }
+    };
+  }
+
+  const warPath = resolve("../mapcode-rest-service/deployment/target/mapcode-rest-service.war");
+  if (existsSync(warPath)) {
+    return {
+      command: "java",
+      args: ["-jar", warPath, "--port", port],
+      cwd: resolve("../mapcode-rest-service"),
+      env: {
+        MAPCODE_BORDERS_PATH: resolve("../mapcode-rest-service/resources/src/main/resources/borders.fgb")
+      }
+    };
+  }
+
+  return {
+    command: "mvn",
+    args: ["jetty:run", `-Djetty.http.port=${port}`, `-Djetty.port=${port}`],
+    cwd: resolve("../mapcode-rest-service/deployment"),
+    env: {
+      MAPCODE_BORDERS_PATH: resolve("../mapcode-rest-service/resources/src/main/resources/borders.fgb")
+    }
+  };
+}
+
+async function waitForServiceReady(baseUrl: string): Promise<boolean> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (await isReady(baseUrl)) return true;
+    await new Promise((resolveReady) => setTimeout(resolveReady, 500));
+  }
+  return false;
 }

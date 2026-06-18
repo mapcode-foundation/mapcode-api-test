@@ -9,18 +9,24 @@ export interface ReportInput {
   serviceVersions: { java?: string; typescript?: string };
 }
 
-export async function writeReports(input: ReportInput): Promise<{ markdownPath: string; jsonPath: string }> {
+export async function writeReports(input: ReportInput): Promise<{
+  markdownPath: string;
+  jsonPath: string;
+  markdown: string;
+  html: string;
+}> {
   await mkdir(input.outputDir, { recursive: true });
 
   const fileStem = safeFileStem(input.summary.runId);
   const markdownPath = join(input.outputDir, `${fileStem}.md`);
   const jsonPath = join(input.outputDir, `${fileStem}.json`);
   const redacted = redact(input);
+  const markdown = renderMarkdown(redacted);
 
-  await writeFile(markdownPath, renderMarkdown(redacted), "utf8");
+  await writeFile(markdownPath, markdown, "utf8");
   await writeFile(jsonPath, JSON.stringify(redacted, null, 2), "utf8");
 
-  return { markdownPath, jsonPath };
+  return { markdownPath, jsonPath, markdown, html: renderHtml(markdown) };
 }
 
 function renderMarkdown(input: ReportInput): string {
@@ -90,6 +96,86 @@ function renderEvidence(response: ServiceResponse): string[] {
 
 function codeBlock(value: string): string[] {
   return ["```", value.replace(/```/g, "``\\`"), "```"];
+}
+
+function renderHtml(markdown: string): string {
+  const lines = markdown.split("\n");
+  const html: string[] = [];
+  let inList = false;
+  let inCode = false;
+  const codeLines: string[] = [];
+
+  function closeList(): void {
+    if (!inList) return;
+    html.push("</ul>");
+    inList = false;
+  }
+
+  for (const line of lines) {
+    if (line === "```") {
+      if (inCode) {
+        html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        codeLines.length = 0;
+        inCode = false;
+      } else {
+        closeList();
+        inCode = true;
+      }
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (line.startsWith("### ")) {
+      closeList();
+      html.push(`<h3>${escapeHtml(line.slice(4))}</h3>`);
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      closeList();
+      html.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      closeList();
+      html.push(`<h1>${escapeHtml(line.slice(2))}</h1>`);
+      continue;
+    }
+    if (line.startsWith("- ")) {
+      if (!inList) {
+        html.push("<ul>");
+        inList = true;
+      }
+      html.push(`<li>${renderInline(line.slice(2))}</li>`);
+      continue;
+    }
+    if (line.trim().length === 0) {
+      closeList();
+      continue;
+    }
+    closeList();
+    html.push(`<p>${renderInline(line)}</p>`);
+  }
+
+  closeList();
+  if (inCode) html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  return html.join("\n");
+}
+
+function renderInline(value: string): string {
+  return escapeHtml(value).replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function formatInline(value: unknown): string {
