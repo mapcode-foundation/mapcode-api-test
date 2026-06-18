@@ -140,7 +140,19 @@ h1 {
   font-weight: 850;
 }
 
-.auto-start-button:disabled {
+.stop-apis-button {
+  min-height: 28px;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #b42339;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.auto-start-button:disabled,
+.stop-apis-button:disabled {
   cursor: wait;
   opacity: 0.7;
 }

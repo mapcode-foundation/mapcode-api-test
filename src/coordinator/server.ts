@@ -163,6 +163,7 @@ export function createServerApp(input: ServerInput = {}) {
       addServiceLog(kind, `Running ${step.command} ${step.args.join(" ")} in ${step.cwd}`);
       const child = spawn(step.command, step.args, {
         cwd: step.cwd,
+        detached: true,
         env: { ...process.env, ...step.env }
       });
       service.child = child;
@@ -197,11 +198,18 @@ export function createServerApp(input: ServerInput = {}) {
     return publicService(service);
   }
 
-  async function stopService(kind: ServiceKind): Promise<void> {
-    const child = services[kind].child;
-    if (!child) return;
-    services[kind].child = undefined;
-    child.kill("SIGTERM");
+  async function stopService(
+    kind: ServiceKind,
+    options: { markUnavailable?: boolean; log?: boolean } = {}
+  ): Promise<void> {
+    const service = services[kind];
+    const child = service.child;
+    if (child) {
+      service.child = undefined;
+      terminateChildProcess(child);
+    }
+    if (options.markUnavailable) setServiceAvailability(kind, "unavailable");
+    if (options.log) addServiceLog(kind, `Stopped ${service.label}`);
   }
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -267,6 +275,13 @@ export function createServerApp(input: ServerInput = {}) {
     }
   });
   app.get("/api/services", (_req, res) => res.json(publicServices()));
+  app.post("/api/services/stop", async (_req, res) => {
+    await Promise.all([
+      stopService("java", { markUnavailable: true, log: true }),
+      stopService("typescript", { markUnavailable: true, log: true })
+    ]);
+    return res.json(publicServices());
+  });
   app.post("/api/services/:kind/check", async (req, res) => {
     const kind = parseServiceKind(req.params.kind);
     if (!kind) return res.status(404).json({ error: "Unknown service" });
@@ -457,6 +472,18 @@ function fallbackSummary(profile: RunProfileName, seed: number, failures: number
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown run error";
+}
+
+function terminateChildProcess(child: ChildProcessWithoutNullStreams): void {
+  if (child.pid && process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+      return;
+    } catch {
+      // Fall back to the direct child signal below.
+    }
+  }
+  child.kill("SIGTERM");
 }
 
 function normalizeBaseUrl(value: string): string {

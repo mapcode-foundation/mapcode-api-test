@@ -42,6 +42,10 @@ export async function startService(kind: ServiceKind, baseUrl: string, sourcePat
   return postJson<ServiceStatus>(`/api/services/${kind}/start`, { baseUrl, sourcePath });
 }
 
+export async function stopServices(): Promise<ServicesResponse> {
+  return postJson<ServicesResponse>("/api/services/stop");
+}
+
 export async function startRun(profile: string, requestDelaySeconds: number): Promise<{ state: string; totalCases: number }> {
   const response = await fetch("/api/run/start", {
     method: "POST",

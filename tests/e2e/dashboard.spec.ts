@@ -204,6 +204,40 @@ test("dashboard auto-starts both APIs from the main screen", async ({ page }) =>
   ]);
 });
 
+test("dashboard stops both APIs from the main screen", async ({ page }) => {
+  let stopCalled = false;
+  const stoppedServices = {
+    java: {
+      ...operationalServices.java,
+      availability: "unavailable",
+      logs: ["Stopped Java API (leading)"]
+    },
+    typescript: {
+      ...operationalServices.typescript,
+      availability: "unavailable",
+      logs: ["Stopped TypeScript API (ported)"]
+    }
+  };
+
+  await routeServices(page);
+  await page.route("**/api/services/stop", async (route) => {
+    stopCalled = true;
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(stoppedServices) });
+  });
+
+  await page.goto("/");
+  const controlOrder = await page.locator(".service-health").evaluate((node) =>
+    Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
+  );
+  expect(controlOrder.slice(0, 2)).toEqual(["Auto-start APIs", "Stop APIs"]);
+
+  await page.getByRole("button", { name: "Stop APIs" }).click();
+
+  expect(stopCalled).toBe(true);
+  await expect(page.getByRole("button", { name: "Java API (leading) failed" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "TypeScript API (ported) failed" })).toBeVisible();
+});
+
 test("dashboard keeps service dialog open when starting one API from the dialog", async ({ page }) => {
   await page.route("**/api/services/typescript/start", async (route) => {
     await route.fulfill({

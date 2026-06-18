@@ -12,6 +12,7 @@ import {
   saveReport,
   startRun,
   startService,
+  stopServices,
   stopRun,
   updateRunDelay,
   type ServicesResponse
@@ -91,6 +92,7 @@ export function App() {
   const [serviceDraftSourcePath, setServiceDraftSourcePath] = useState("");
   const [serviceMessage, setServiceMessage] = useState("");
   const [isAutoStartingServices, setIsAutoStartingServices] = useState(false);
+  const [isStoppingServices, setIsStoppingServices] = useState(false);
   const [loadMessage, setLoadMessage] = useState("Loading coordinator state");
 
   useEffect(() => {
@@ -409,6 +411,23 @@ export function App() {
     }
   }
 
+  async function handleStopServices(): Promise<void> {
+    setIsStoppingServices(true);
+    setLoadMessage("Stopping APIs");
+
+    try {
+      const nextServices = await stopServices();
+      setServices(nextServices);
+      setLoadMessage("APIs stopped");
+    } catch {
+      const serviceState = await getServices().catch(() => undefined);
+      if (serviceState) setServices(serviceState);
+      setLoadMessage("API stop failed");
+    } finally {
+      setIsStoppingServices(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="dashboard-header">
@@ -427,6 +446,14 @@ export function App() {
             onClick={() => void handleAutoStartServices()}
           >
             {isAutoStartingServices ? "Starting APIs" : "Auto-start APIs"}
+          </button>
+          <button
+            type="button"
+            className="stop-apis-button"
+            disabled={isStoppingServices}
+            onClick={() => void handleStopServices()}
+          >
+            {isStoppingServices ? "Stopping APIs" : "Stop APIs"}
           </button>
           {(["java", "typescript"] as const).map((kind) => (
             <ServiceStatusButton key={kind} service={services[kind]} onClick={() => openServiceConfig(kind)} />

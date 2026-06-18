@@ -105,6 +105,23 @@ describe("coordinator server", () => {
     }
   });
 
+  it("stops both managed APIs and reports them as unavailable", async () => {
+    const app = createServerApp({ env: {} });
+    const response = await inject(app, "/api/services/stop", { method: "POST" });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      java: {
+        availability: "unavailable",
+        logs: ["Stopped Java API (leading)"]
+      },
+      typescript: {
+        availability: "unavailable",
+        logs: ["Stopped TypeScript API (ported)"]
+      }
+    });
+  });
+
   it("rejects automatic start when the source repo path does not exist", async () => {
     const app = createServerApp({ env: {} });
     const response = await inject(app, "/api/services/java/start", {
