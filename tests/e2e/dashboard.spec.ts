@@ -53,6 +53,21 @@ test("dashboard shows profile, map preview, and report controls", async ({ page 
   expect(sectionOrder).toEqual(["summary", "workspace", "coverage"]);
 });
 
+test("dashboard keeps API response panes vertically split at app browser widths", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto("/");
+
+  const javaPane = page.locator(".service-grid .pane").filter({ hasText: "Java API (leading)" });
+  const typescriptPane = page.locator(".service-grid .pane").filter({ hasText: "TypeScript API (ported)" });
+  const javaBox = await javaPane.boundingBox();
+  const typescriptBox = await typescriptPane.boundingBox();
+
+  expect(javaBox).not.toBeNull();
+  expect(typescriptBox).not.toBeNull();
+  expect(Math.abs(javaBox!.y - typescriptBox!.y)).toBeLessThan(2);
+  expect(typescriptBox!.x).toBeGreaterThan(javaBox!.x + javaBox!.width * 0.8);
+});
+
 test("dashboard sends the selected request delay when starting a run", async ({ page }) => {
   let startPayload: unknown;
   await routeServices(page);

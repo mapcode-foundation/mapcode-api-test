@@ -1159,8 +1159,7 @@ input {
   }
 
   .workspace,
-  .coverage-preview,
-  .service-grid {
+  .coverage-preview {
     grid-template-columns: 1fr;
   }
 }
@@ -1197,6 +1196,10 @@ input {
   .progress-copy {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .service-grid {
+    grid-template-columns: 1fr;
   }
 
   .run-controls {
