@@ -86,4 +86,24 @@ describe("writeReports", () => {
     expect(result.html).toContain("Mapcode API Parity Report run-test");
     expect(result.markdown).not.toContain("json-secret-value");
   });
+
+  it("numbers discrepancies in the rendered report so they can be referenced", () => {
+    const secondDiscrepancy: Discrepancy = {
+      ...discrepancy,
+      id: "d2",
+      caseId: "c2",
+      endpoint: "/mapcode/codes/40,-74"
+    };
+    const result = renderReport({
+      outputDir: "/path/that/does/not/matter",
+      summary,
+      discrepancies: [discrepancy, secondDiscrepancy],
+      serviceVersions: { java: "2", typescript: "1" }
+    });
+
+    expect(result.markdown).toContain("### Discrepancy 1: d1");
+    expect(result.markdown).toContain("### Discrepancy 2: d2");
+    expect(result.html).toContain("<h3>Discrepancy 1: d1</h3>");
+    expect(result.html).toContain("<h3>Discrepancy 2: d2</h3>");
+  });
 });

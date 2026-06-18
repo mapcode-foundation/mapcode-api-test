@@ -67,8 +67,8 @@ function renderMarkdown(input: ReportInput): string {
     return lines.join("\n");
   }
 
-  for (const item of input.discrepancies) {
-    lines.push(`### ${item.id}`);
+  for (const [index, item] of input.discrepancies.entries()) {
+    lines.push(`### Discrepancy ${index + 1}: ${item.id}`);
     lines.push("");
     lines.push(`- Case: \`${item.caseId}\``);
     if (item.fixtureId) lines.push(`- Fixture: \`${item.fixtureId}\``);
