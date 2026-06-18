@@ -44,6 +44,9 @@ describe("App shell", () => {
     expect(markup).not.toContain("Custom");
     expect(markup).toContain("Java API (leading)");
     expect(markup).toContain("TypeScript API (ported)");
+    expect(markup).toContain("Java API (leading) not started");
+    expect(markup).toContain("TypeScript API (ported) not started");
+    expect(markup).not.toContain("Java API (leading) unknown");
   });
 });
 
@@ -57,6 +60,14 @@ describe("CoverageMap", () => {
       lon: 4.908543,
       territory: "NLD",
       source: "test"
+    },
+    {
+      id: "raster-000-000",
+      category: "country",
+      label: "Global raster 1/1",
+      lat: -89,
+      lon: -179,
+      source: "global-raster"
     }
   ];
 
@@ -74,6 +85,24 @@ describe("CoverageMap", () => {
     expect(markup).toContain("Map");
     expect(markup).toContain("Table");
     expect(markup).toContain("Coverage map preview");
+    expect(markup).toContain("/api/tomtom/tile/1/0/0.png");
+    expect(markup).toContain("Map point legend");
+    expect(markup).toContain("Queued");
+  });
+
+  it("hides generated global raster points from the map layer", () => {
+    const markup = renderToStaticMarkup(
+      createElement(CoverageMap, {
+        points,
+        states: { "capital-nld-amsterdam": "queued", "raster-000-000": "queued" },
+        mapKeyAvailable: true,
+        view: "map",
+        onViewChange: () => undefined
+      })
+    );
+
+    expect(markup).toContain("1 global raster points are hidden on the map");
+    expect(markup).not.toContain('title="Global raster 1/1"');
   });
 });
 

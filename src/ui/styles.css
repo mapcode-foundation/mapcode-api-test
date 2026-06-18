@@ -306,7 +306,8 @@ input {
 
 .coverage-map {
   position: relative;
-  min-height: 260px;
+  aspect-ratio: 1 / 1;
+  min-height: 520px;
   overflow: hidden;
   border: 1px solid #d8e1ea;
   border-radius: 7px;
@@ -316,10 +317,24 @@ input {
     linear-gradient(145deg, #d9edf0, #e6ecf3 54%, #dfe8df);
 }
 
-.tomtom-map,
+.tile-map,
 .coverage-static-layer {
   position: absolute;
   inset: 0;
+}
+
+.tile-map {
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.tile-map img {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  display: block;
 }
 
 .coverage-static-layer {
@@ -361,6 +376,43 @@ input {
 .point.blocked,
 .point-state.blocked {
   background: #a16207;
+}
+
+.map-legend {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 10px;
+  max-width: min(520px, calc(100% - 24px));
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 7px;
+  background: rgba(248, 250, 252, 0.92);
+  color: #243447;
+  padding: 7px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(22, 31, 43, 0.12);
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.legend-point {
+  position: static;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0;
+  border-width: 1px;
+  box-shadow: none;
 }
 
 .coverage-side {
@@ -823,6 +875,53 @@ input {
 
 .service-actions {
   justify-content: flex-start;
+}
+
+.service-progress {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #dbe3ea;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #46586a;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.service-progress.available {
+  border-color: #b8ded7;
+  background: #ecfdf8;
+  color: #0d6b61;
+}
+
+.service-progress.starting {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.service-progress.unavailable {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #b42339;
+}
+
+.service-progress.unknown .status-dot {
+  background: #94a3b8;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.13);
+}
+
+.service-progress.starting .status-dot {
+  background: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14);
+}
+
+.service-progress.unavailable .status-dot {
+  background: #e11d48;
+  box-shadow: 0 0 0 4px rgba(225, 29, 72, 0.12);
 }
 
 .service-log {

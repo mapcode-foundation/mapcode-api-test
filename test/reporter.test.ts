@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeReports } from "../src/coordinator/reporter";
+import { renderReport, writeReports } from "../src/coordinator/reporter";
 import type { Discrepancy, RunSummary } from "../src/shared/types";
 
 const summary: RunSummary = {
@@ -72,5 +72,18 @@ describe("writeReports", () => {
     expect(parsed.discrepancies[0].java.canonical.TOMTOM_API_KEY).toBe("[REDACTED]");
     expect(parsed.discrepancies[0].java.canonical.territory).toBe("NLD");
     expect(parsed.discrepancies[0].typescript.body).toContain('"TOMTOM_API_KEY":"[REDACTED]"');
+  });
+
+  it("can render a report preview even when files cannot be written", () => {
+    const result = renderReport({
+      outputDir: "/path/that/does/not/matter",
+      summary,
+      discrepancies: [discrepancy],
+      serviceVersions: { java: "2", typescript: "1" }
+    });
+
+    expect(result.markdown).toContain("payload differs");
+    expect(result.html).toContain("Mapcode API Parity Report run-test");
+    expect(result.markdown).not.toContain("json-secret-value");
   });
 });

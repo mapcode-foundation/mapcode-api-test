@@ -15,18 +15,34 @@ export async function writeReports(input: ReportInput): Promise<{
   markdown: string;
   html: string;
 }> {
+  const report = renderReport(input);
   await mkdir(input.outputDir, { recursive: true });
 
+  await writeFile(report.markdownPath, report.markdown, "utf8");
+  await writeFile(report.jsonPath, JSON.stringify(report.json, null, 2), "utf8");
+
+  return {
+    markdownPath: report.markdownPath,
+    jsonPath: report.jsonPath,
+    markdown: report.markdown,
+    html: report.html
+  };
+}
+
+export function renderReport(input: ReportInput): {
+  markdownPath: string;
+  jsonPath: string;
+  markdown: string;
+  html: string;
+  json: ReportInput;
+} {
   const fileStem = safeFileStem(input.summary.runId);
   const markdownPath = join(input.outputDir, `${fileStem}.md`);
   const jsonPath = join(input.outputDir, `${fileStem}.json`);
-  const redacted = redact(input);
-  const markdown = renderMarkdown(redacted);
+  const json = redact(input);
+  const markdown = renderMarkdown(json);
 
-  await writeFile(markdownPath, markdown, "utf8");
-  await writeFile(jsonPath, JSON.stringify(redacted, null, 2), "utf8");
-
-  return { markdownPath, jsonPath, markdown, html: renderHtml(markdown) };
+  return { markdownPath, jsonPath, markdown, html: renderHtml(markdown), json };
 }
 
 function renderMarkdown(input: ReportInput): string {

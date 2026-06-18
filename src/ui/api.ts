@@ -34,12 +34,12 @@ export async function checkService(kind: ServiceKind): Promise<ServiceStatus> {
   return postJson<ServiceStatus>(`/api/services/${kind}/check`);
 }
 
-export async function configureService(kind: ServiceKind, baseUrl: string): Promise<ServiceStatus> {
-  return postJson<ServiceStatus>(`/api/services/${kind}/config`, { baseUrl });
+export async function configureService(kind: ServiceKind, baseUrl: string, sourcePath: string): Promise<ServiceStatus> {
+  return postJson<ServiceStatus>(`/api/services/${kind}/config`, { baseUrl, sourcePath });
 }
 
-export async function startService(kind: ServiceKind, baseUrl: string): Promise<ServiceStatus> {
-  return postJson<ServiceStatus>(`/api/services/${kind}/start`, { baseUrl });
+export async function startService(kind: ServiceKind, baseUrl: string, sourcePath: string): Promise<ServiceStatus> {
+  return postJson<ServiceStatus>(`/api/services/${kind}/start`, { baseUrl, sourcePath });
 }
 
 export async function startRun(profile: string): Promise<{ state: string; totalCases: number }> {

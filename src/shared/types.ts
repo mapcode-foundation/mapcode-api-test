@@ -39,6 +39,7 @@ export interface ServiceStatus {
   label: string;
   mode: ServiceMode;
   baseUrl: string;
+  sourcePath: string;
   availability: ServiceAvailability;
   logs: string[];
 }

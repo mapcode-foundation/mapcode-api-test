@@ -30,6 +30,7 @@ import type {
   RunnerEvent,
   RunProfileName,
   RunSummary,
+  ServiceAvailability,
   ServiceKind,
   ServiceResponse
 } from "../shared/types";
@@ -38,6 +39,12 @@ const profiles: RunProfileName[] = ["Fast", "Deep"];
 const profileDescriptions: Record<RunProfileName, string> = {
   Fast: "Curated city, pole, and ocean coverage for quick parity checks.",
   Deep: "City clouds plus a deterministic 10,000-point global raster."
+};
+const serviceProgressLabels: Record<ServiceAvailability, string> = {
+  unknown: "not started",
+  starting: "starting",
+  available: "operational",
+  unavailable: "failed"
 };
 
 const initialSummary: RunSummary = {
@@ -77,6 +84,7 @@ export function App() {
   const [services, setServices] = useState<ServicesResponse>(initialServices);
   const [configuringService, setConfiguringService] = useState<ServiceKind | undefined>();
   const [serviceDraftUrl, setServiceDraftUrl] = useState("");
+  const [serviceDraftSourcePath, setServiceDraftSourcePath] = useState("");
   const [serviceMessage, setServiceMessage] = useState("");
   const [loadMessage, setLoadMessage] = useState("Loading coordinator state");
 
@@ -145,6 +153,26 @@ export function App() {
 
   useEffect(() => connectEvents(handleRunnerEvent), []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const pollServices = async () => {
+      const nextServices = await Promise.all([
+        checkService("java").catch(() => undefined),
+        checkService("typescript").catch(() => undefined)
+      ]);
+      if (cancelled) return;
+      setServices((current) => ({
+        java: nextServices[0] ?? current.java,
+        typescript: nextServices[1] ?? current.typescript
+      }));
+    };
+    const interval = window.setInterval(() => void pollServices(), 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const currentCase = useMemo(() => currentRequest ?? cases[0], [cases, currentRequest]);
   const progress = useMemo(() => {
     if (summary.totalCases === 0) return 0;
@@ -186,6 +214,13 @@ export function App() {
         setRunState("stopped");
         break;
       case "service-log":
+        setServices((current) => ({
+          ...current,
+          [event.service]: {
+            ...current[event.service],
+            logs: [...current[event.service].logs, event.line].slice(-40)
+          }
+        }));
         break;
       case "service-status":
         setServices(event.services);
@@ -255,6 +290,7 @@ export function App() {
   function openServiceConfig(kind: ServiceKind): void {
     setConfiguringService(kind);
     setServiceDraftUrl(services[kind].baseUrl);
+    setServiceDraftSourcePath(services[kind].sourcePath);
     setServiceMessage("");
   }
 
@@ -266,10 +302,9 @@ export function App() {
   async function handleManualService(kind: ServiceKind): Promise<void> {
     setServiceMessage("Checking service URL");
     try {
-      const service = await configureService(kind, serviceDraftUrl);
+      const service = await configureService(kind, serviceDraftUrl, serviceDraftSourcePath);
       setServices((current) => ({ ...current, [kind]: service }));
-      setServiceMessage(`${service.label} available`);
-      setConfiguringService(undefined);
+      setServiceMessage(`${service.label} ${serviceProgressLabels[service.availability]}`);
     } catch {
       const serviceState = await getServices().catch(() => undefined);
       if (serviceState) setServices(serviceState);
@@ -280,10 +315,19 @@ export function App() {
   async function handleAutoStartService(kind: ServiceKind): Promise<void> {
     setServiceMessage("Starting service");
     try {
-      const service = await startService(kind, serviceDraftUrl);
+      setServices((current) => ({
+        ...current,
+        [kind]: {
+          ...current[kind],
+          mode: "auto",
+          baseUrl: serviceDraftUrl,
+          sourcePath: serviceDraftSourcePath,
+          availability: "starting"
+        }
+      }));
+      const service = await startService(kind, serviceDraftUrl, serviceDraftSourcePath);
       setServices((current) => ({ ...current, [kind]: service }));
-      setServiceMessage(service.availability === "available" ? `${service.label} available` : `${service.label} unavailable`);
-      if (service.availability === "available") setConfiguringService(undefined);
+      setServiceMessage(`${service.label} ${serviceProgressLabels[service.availability]}`);
     } catch {
       const serviceState = await getServices().catch(() => undefined);
       if (serviceState) setServices(serviceState);
@@ -311,15 +355,7 @@ export function App() {
         </div>
         <div className="service-health" aria-label="Service status">
           {(["java", "typescript"] as const).map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              className={`status-chip ${services[kind].availability}`}
-              onClick={() => openServiceConfig(kind)}
-            >
-              <span className="status-dot" aria-hidden="true" />
-              {services[kind].label} {services[kind].availability}
-            </button>
+            <ServiceStatusButton key={kind} service={services[kind]} onClick={() => openServiceConfig(kind)} />
           ))}
           <span className="status-chip muted">{mapKeyStatus}</span>
         </div>
@@ -436,8 +472,10 @@ export function App() {
         <ServiceConfigDialog
           service={services[configuringService]}
           draftUrl={serviceDraftUrl}
+          draftSourcePath={serviceDraftSourcePath}
           message={serviceMessage}
           onDraftUrlChange={setServiceDraftUrl}
+          onDraftSourcePathChange={setServiceDraftSourcePath}
           onClose={() => setConfiguringService(undefined)}
           onCheck={() => void handleCheckService(configuringService)}
           onManual={() => void handleManualService(configuringService)}
@@ -467,6 +505,7 @@ const initialServices: ServicesResponse = {
     label: "Java API (leading)",
     mode: "manual",
     baseUrl: "http://127.0.0.1:8081",
+    sourcePath: "../mapcode-rest-service",
     availability: "unknown",
     logs: []
   },
@@ -475,16 +514,28 @@ const initialServices: ServicesResponse = {
     label: "TypeScript API (ported)",
     mode: "manual",
     baseUrl: "http://127.0.0.1:8082",
+    sourcePath: "../mapcode-rest-service-ts",
     availability: "unknown",
     logs: []
   }
 };
 
+function ServiceStatusButton({ service, onClick }: { service: ServicesResponse[ServiceKind]; onClick: () => void }) {
+  return (
+    <button type="button" className={`status-chip ${service.availability}`} onClick={onClick}>
+      <span className="status-dot" aria-hidden="true" />
+      {service.label} {serviceProgressLabels[service.availability]}
+    </button>
+  );
+}
+
 function ServiceConfigDialog({
   service,
   draftUrl,
+  draftSourcePath,
   message,
   onDraftUrlChange,
+  onDraftSourcePathChange,
   onClose,
   onCheck,
   onManual,
@@ -492,8 +543,10 @@ function ServiceConfigDialog({
 }: {
   service: ServicesResponse[ServiceKind];
   draftUrl: string;
+  draftSourcePath: string;
   message: string;
   onDraftUrlChange: (value: string) => void;
+  onDraftSourcePathChange: (value: string) => void;
   onClose: () => void;
   onCheck: () => void;
   onManual: () => void;
@@ -516,6 +569,14 @@ function ServiceConfigDialog({
             Specify URL/port
           </label>
           <input id="service-url" value={draftUrl} onChange={(event) => onDraftUrlChange(event.target.value)} />
+          <label className="input-label" htmlFor="service-source-path">
+            Source repository path
+          </label>
+          <input
+            id="service-source-path"
+            value={draftSourcePath}
+            onChange={(event) => onDraftSourcePathChange(event.target.value)}
+          />
           <div className="modal-actions service-actions">
             <button type="button" className="secondary" onClick={onCheck}>
               Check
@@ -527,7 +588,13 @@ function ServiceConfigDialog({
               Start automatically
             </button>
           </div>
-          <p className={service.availability === "available" ? "success" : "error"}>{message || `${service.availability} at ${service.baseUrl}`}</p>
+          <div className={`service-progress ${service.availability}`} role="status">
+            <span className="status-dot" aria-hidden="true" />
+            <span>{serviceProgressLabels[service.availability]}</span>
+          </div>
+          <p className={service.availability === "available" ? "success" : "error"}>
+            {message || `${serviceProgressLabels[service.availability]} at ${service.baseUrl}`}
+          </p>
           <pre className="service-log">{service.logs.length > 0 ? service.logs.join("\n") : "No service logs yet."}</pre>
         </div>
       </section>

@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
 import { loadFixtureSet, expandFixtureCases, resolveFixtureSet } from "./fixture-store";
-import { writeReports } from "./reporter";
+import { renderReport, writeReports } from "./reporter";
 import { Runner } from "./runner";
 import { isReady } from "./service-manager";
 import type {
@@ -24,9 +24,18 @@ export interface ServerInput {
 
 type RunState = "idle" | "running" | "paused" | "stopped";
 type ServiceState = ServiceStatus & { child?: ChildProcessWithoutNullStreams };
+export type ServiceStartStep = {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string>;
+  waitForExit: boolean;
+};
 
 const defaultJavaBaseUrl = "http://127.0.0.1:8081";
 const defaultTypeScriptBaseUrl = "http://127.0.0.1:8082";
+const defaultJavaSourcePath = "../mapcode-rest-service";
+const defaultTypeScriptSourcePath = "../mapcode-rest-service-ts";
 const defaultSeed = 20260617;
 const serviceLabels: Record<ServiceKind, string> = {
   java: "Java API (leading)",
@@ -50,6 +59,7 @@ export function createServerApp(input: ServerInput = {}) {
       label: serviceLabels.java,
       mode: "manual",
       baseUrl: defaultJavaBaseUrl,
+      sourcePath: defaultJavaSourcePath,
       availability: "unknown",
       logs: []
     },
@@ -58,6 +68,7 @@ export function createServerApp(input: ServerInput = {}) {
       label: serviceLabels.typescript,
       mode: "manual",
       baseUrl: defaultTypeScriptBaseUrl,
+      sourcePath: defaultTypeScriptSourcePath,
       availability: "unknown",
       logs: []
     }
@@ -102,6 +113,7 @@ export function createServerApp(input: ServerInput = {}) {
       label: service.label,
       mode: service.mode,
       baseUrl: service.baseUrl,
+      sourcePath: service.sourcePath,
       availability: service.availability,
       logs: service.logs.slice(-40)
     };
@@ -119,9 +131,15 @@ export function createServerApp(input: ServerInput = {}) {
     publish({ type: "service-log", service: kind, line });
   }
 
-  async function refreshService(kind: ServiceKind): Promise<boolean> {
+  async function refreshService(kind: ServiceKind, options: { preserveStarting?: boolean } = {}): Promise<boolean> {
     const ready = await isReady(services[kind].baseUrl);
-    setServiceAvailability(kind, ready ? "available" : "unavailable");
+    if (ready) {
+      setServiceAvailability(kind, "available");
+    } else if (options.preserveStarting && services[kind].availability === "starting" && services[kind].child) {
+      publish({ type: "service-status", services: publicServices() });
+    } else {
+      setServiceAvailability(kind, "unavailable");
+    }
     return ready;
   }
 
@@ -140,22 +158,38 @@ export function createServerApp(input: ServerInput = {}) {
     setServiceAvailability(kind, "starting");
     addServiceLog(kind, `Starting ${service.label} at ${service.baseUrl}`);
 
-    const command = startCommand(kind, service.baseUrl);
-    const child = spawn(command.command, command.args, {
-      cwd: command.cwd,
-      env: { ...process.env, ...command.env }
-    });
-    service.child = child;
-    child.stdout.on("data", (chunk) => addServiceLog(kind, String(chunk).trim()));
-    child.stderr.on("data", (chunk) => addServiceLog(kind, String(chunk).trim()));
-    child.on("exit", (code, signal) => {
-      if (service.child !== child) return;
-      service.child = undefined;
-      if (service.availability === "starting" || service.availability === "available") {
-        setServiceAvailability(kind, "unavailable");
+    const steps = buildServiceStartPlan(kind, service.baseUrl, service.sourcePath);
+    for (const step of steps) {
+      addServiceLog(kind, `Running ${step.command} ${step.args.join(" ")} in ${step.cwd}`);
+      const child = spawn(step.command, step.args, {
+        cwd: step.cwd,
+        env: { ...process.env, ...step.env }
+      });
+      service.child = child;
+      child.stdout.on("data", (chunk) => addServiceLog(kind, String(chunk).trim()));
+      child.stderr.on("data", (chunk) => addServiceLog(kind, String(chunk).trim()));
+      child.on("error", (error) => addServiceLog(kind, `${service.label} failed to start: ${formatError(error)}`));
+
+      if (step.waitForExit) {
+        const code = await waitForProcessExit(child);
+        if (service.child === child) service.child = undefined;
+        if (code !== 0) {
+          setServiceAvailability(kind, "unavailable");
+          addServiceLog(kind, `${service.label} setup failed with exit code ${code}`);
+          return publicService(service);
+        }
+        continue;
       }
-      addServiceLog(kind, `${service.label} exited with ${signal ?? code ?? "unknown status"}`);
-    });
+
+      child.on("exit", (code, signal) => {
+        if (service.child !== child) return;
+        service.child = undefined;
+        if (service.availability === "starting" || service.availability === "available") {
+          setServiceAvailability(kind, "unavailable");
+        }
+        addServiceLog(kind, `${service.label} exited with ${signal ?? code ?? "unknown status"}`);
+      });
+    }
 
     const ready = await waitForServiceReady(service.baseUrl);
     setServiceAvailability(kind, ready ? "available" : "unavailable");
@@ -189,6 +223,25 @@ export function createServerApp(input: ServerInput = {}) {
     if (!key) return res.status(404).json({ error: "TomTom map key unavailable" });
     return res.json({ key });
   });
+  app.get("/api/tomtom/tile/:z/:x/:y.png", async (req, res, next) => {
+    try {
+      const key = runtimeTomTomApiKey || env.TOMTOM_API_KEY;
+      if (!key) return res.status(404).json({ error: "TomTom map key unavailable" });
+      const z = parseTilePart(req.params.z);
+      const x = parseTilePart(req.params.x);
+      const y = parseTilePart(req.params.y);
+      if (z === undefined || x === undefined || y === undefined) return res.status(400).json({ error: "Invalid tile" });
+
+      const tileResponse = await fetch(`https://api.tomtom.com/map/1/tile/basic/main/${z}/${x}/${y}.png?key=${key}`);
+      if (!tileResponse.ok) return res.status(tileResponse.status).json({ error: "TomTom tile unavailable" });
+      const body = Buffer.from(await tileResponse.arrayBuffer());
+      res.type(tileResponse.headers.get("content-type") ?? "image/png");
+      res.setHeader("cache-control", "public, max-age=3600");
+      return res.send(body);
+    } catch (error) {
+      next(error);
+    }
+  });
   app.post("/api/config/tomtom-key", (req, res) => {
     const key = typeof req.body?.key === "string" ? req.body.key.trim() : "";
     if (key.length < 8) return res.status(400).json({ error: "TomTom API key is too short" });
@@ -217,15 +270,17 @@ export function createServerApp(input: ServerInput = {}) {
   app.post("/api/services/:kind/check", async (req, res) => {
     const kind = parseServiceKind(req.params.kind);
     if (!kind) return res.status(404).json({ error: "Unknown service" });
-    await refreshService(kind);
+    await refreshService(kind, { preserveStarting: true });
     return res.json(publicService(services[kind]));
   });
   app.post("/api/services/:kind/config", async (req, res) => {
     const kind = parseServiceKind(req.params.kind);
     if (!kind) return res.status(404).json({ error: "Unknown service" });
     const baseUrl = readBodyString(req.body?.baseUrl, services[kind].baseUrl);
+    const sourcePath = readBodyString(req.body?.sourcePath, services[kind].sourcePath);
     services[kind].mode = "manual";
     services[kind].baseUrl = normalizeBaseUrl(baseUrl);
+    services[kind].sourcePath = sourcePath;
     await stopService(kind);
     const ready = await refreshService(kind);
     if (!ready) return res.status(400).json(publicService(services[kind]));
@@ -236,6 +291,14 @@ export function createServerApp(input: ServerInput = {}) {
       const kind = parseServiceKind(req.params.kind);
       if (!kind) return res.status(404).json({ error: "Unknown service" });
       if (typeof req.body?.baseUrl === "string") services[kind].baseUrl = normalizeBaseUrl(req.body.baseUrl);
+      if (typeof req.body?.sourcePath === "string" && req.body.sourcePath.trim()) {
+        services[kind].sourcePath = req.body.sourcePath.trim();
+      }
+      if (!existsSync(resolve(services[kind].sourcePath))) {
+        setServiceAvailability(kind, "unavailable");
+        addServiceLog(kind, `Source path not found: ${services[kind].sourcePath}`);
+        return res.status(400).json({ error: "Source path unavailable", service: services[kind].label });
+      }
       const service = await startService(kind);
       return res.status(service.availability === "available" ? 200 : 500).json(service);
     } catch (error) {
@@ -319,16 +382,28 @@ export function createServerApp(input: ServerInput = {}) {
     return res.json({ state: runState });
   });
   app.post("/api/report/save", async (_req, res, next) => {
+    const reportInput = {
+      outputDir: "reports",
+      summary: lastSummary ?? fallbackSummary(lastProfile, lastSeed, discrepancies.length),
+      discrepancies,
+      serviceVersions: { java: "attached", typescript: "attached" }
+    };
     try {
-      const paths = await writeReports({
-        outputDir: "reports",
-        summary: lastSummary ?? fallbackSummary(lastProfile, lastSeed, discrepancies.length),
-        discrepancies,
-        serviceVersions: { java: "attached", typescript: "attached" }
-      });
+      const paths = await writeReports(reportInput);
       res.json(paths);
     } catch (error) {
-      next(error);
+      try {
+        const preview = renderReport(reportInput);
+        res.json({
+          markdownPath: preview.markdownPath,
+          jsonPath: preview.jsonPath,
+          markdown: preview.markdown,
+          html: preview.html,
+          warning: `Report preview rendered, but files were not saved: ${formatError(error)}`
+        });
+      } catch (fallbackError) {
+        next(fallbackError);
+      }
     }
   });
   app.get("*", (_req, res, next) => {
@@ -345,6 +420,11 @@ function parseProfile(value: unknown): RunProfileName {
 
 function parseServiceKind(value: string): ServiceKind | undefined {
   return value === "java" || value === "typescript" ? value : undefined;
+}
+
+function parseTilePart(value: string): number | undefined {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function readBodyString(value: unknown, fallback: string): string {
@@ -381,43 +461,64 @@ function portFromBaseUrl(baseUrl: string): string {
   return url.port || (url.protocol === "https:" ? "443" : "80");
 }
 
-function startCommand(
-  kind: ServiceKind,
-  baseUrl: string
-): { command: string; args: string[]; cwd: string; env: Record<string, string> } {
+export function buildServiceStartPlan(kind: ServiceKind, baseUrl: string, sourcePath: string): ServiceStartStep[] {
   const port = portFromBaseUrl(baseUrl);
+  const resolvedSourcePath = resolve(sourcePath);
   if (kind === "typescript") {
-    return {
-      command: "npm",
-      args: ["run", "dev"],
-      cwd: resolve("../mapcode-rest-service-ts"),
-      env: {
-        PORT: port,
-        MAPCODE_BORDERS_PATH: resolve("../mapcode-rest-service-ts/data/borders.fgb")
+    return [
+      {
+        command: "npm",
+        args: ["run", "dev"],
+        cwd: resolvedSourcePath,
+        env: {
+          PORT: port,
+          MAPCODE_BORDERS_PATH: firstExistingPath([
+            resolve(resolvedSourcePath, "data/borders.fgb"),
+            resolve("../mapcode-rest-service-ts/data/borders.fgb")
+          ])
+        },
+        waitForExit: false
       }
-    };
+    ];
   }
 
-  const warPath = resolve("../mapcode-rest-service/deployment/target/mapcode-rest-service.war");
-  if (existsSync(warPath)) {
-    return {
-      command: "java",
-      args: ["-jar", warPath, "--port", port],
-      cwd: resolve("../mapcode-rest-service"),
+  const bordersPath = firstExistingPath([
+    resolve(resolvedSourcePath, "resources/src/main/resources/borders.fgb"),
+    resolve(resolvedSourcePath, "data/borders.fgb"),
+    resolve("../mapcode-rest-service/resources/src/main/resources/borders.fgb")
+  ]);
+  const deploymentPath = resolve(resolvedSourcePath, "deployment");
+  return [
+    {
+      command: "mvn",
+      args: ["install", "-Pprod"],
+      cwd: resolvedSourcePath,
       env: {
-        MAPCODE_BORDERS_PATH: resolve("../mapcode-rest-service/resources/src/main/resources/borders.fgb")
-      }
-    };
-  }
-
-  return {
-    command: "mvn",
-    args: ["jetty:run", `-Djetty.http.port=${port}`, `-Djetty.port=${port}`],
-    cwd: resolve("../mapcode-rest-service/deployment"),
-    env: {
-      MAPCODE_BORDERS_PATH: resolve("../mapcode-rest-service/resources/src/main/resources/borders.fgb")
+        MAPCODE_BORDERS_PATH: bordersPath
+      },
+      waitForExit: true
+    },
+    {
+      command: "mvn",
+      args: [`-Dmaven.httpserver.port=${port}`, "jetty:run"],
+      cwd: deploymentPath,
+      env: {
+        MAPCODE_BORDERS_PATH: bordersPath
+      },
+      waitForExit: false
     }
-  };
+  ];
+}
+
+function waitForProcessExit(child: ChildProcessWithoutNullStreams): Promise<number> {
+  return new Promise((resolveExit) => {
+    child.once("error", () => resolveExit(1));
+    child.once("exit", (code) => resolveExit(code ?? 1));
+  });
+}
+
+function firstExistingPath(paths: string[]): string {
+  return paths.find((path) => existsSync(path)) ?? paths[0];
 }
 
 async function waitForServiceReady(baseUrl: string): Promise<boolean> {
