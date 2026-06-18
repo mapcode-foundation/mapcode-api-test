@@ -35,7 +35,7 @@ test("dashboard shows profile, map preview, and report controls", async ({ page 
   await expect(page.getByRole("option", { name: "Custom" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Preview map" })).toHaveCount(0);
   await expect(page.getByLabel("Delay")).toHaveValue("0");
-  await expect(page.getByRole("button", { name: "Save report" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Report", exact: true })).toBeVisible();
   const controlOrder = await page.locator(".run-controls").evaluate((node) =>
     Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
   );
@@ -506,14 +506,24 @@ test("dashboard opens an immediate report preview modal after saving", async ({ 
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Save report" }).click();
+  await page.getByRole("button", { name: "Report", exact: true }).click();
 
   await expect(page.getByRole("dialog", { name: "Saved parity report" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy to Clipboard" })).toBeVisible();
   await expect(page.getByText("No discrepancies recorded.")).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Saved to reports/run-preview.md");
+  let actionOrder = await page.locator(".report-modal .modal-actions").evaluate((node) =>
+    Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
+  );
+  expect(actionOrder).toEqual(["Saved to reports/run-preview.md", "Save", "Copy to Clipboard"]);
   await page.getByRole("button", { name: "Copy to Clipboard" }).click();
   await expect(page.getByRole("status")).toContainText("Copied to clipboard");
+  actionOrder = await page.locator(".report-modal .modal-actions").evaluate((node) =>
+    Array.from(node.children).map((child) => child.textContent?.replace(/\s+/g, " ").trim())
+  );
+  expect(actionOrder).toEqual(["Copied to clipboard", "Save", "Copy to Clipboard"]);
 });
 
 test("dashboard can skip a missing TomTom key and continue with fixture table fallback", async ({ page }) => {

@@ -15,20 +15,31 @@ export function ReportDialog({
   onClose: () => void;
   onCopy: () => Promise<void> | void;
 }) {
-  const [copyStatus, setCopyStatus] = useState("");
+  const [actionStatus, setActionStatus] = useState("");
 
-  function saveMarkdown(): void {
+  async function saveMarkdown(): Promise<void> {
     const blob = new Blob([report.markdown], { type: "text/markdown;charset=utf-8" });
+    const fileName = report.paths.markdownPath.split("/").pop() ?? "mapcode-parity-report.md";
+
+    if (await writeWithSavePicker(fileName, blob)) {
+      setActionStatus(`Saved to ${fileName}`);
+      return;
+    }
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = report.paths.markdownPath.split("/").pop() ?? "mapcode-parity-report.md";
+    link.download = fileName;
+    link.style.display = "none";
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setActionStatus(`Saved to ${report.paths.markdownPath}`);
   }
 
   async function copyToClipboard(): Promise<void> {
-    setCopyStatus("Copied to clipboard");
+    setActionStatus("Copied to clipboard");
     await Promise.resolve(onCopy()).catch(() => undefined);
   }
 
@@ -46,19 +57,42 @@ export function ReportDialog({
         </div>
         <div className="report-preview" dangerouslySetInnerHTML={{ __html: report.html }} />
         <div className="modal-actions">
-          <button type="button" className="secondary" onClick={saveMarkdown}>
+          {actionStatus ? (
+            <span className="copy-status" role="status" aria-live="polite">
+              {actionStatus}
+            </span>
+          ) : null}
+          <button type="button" className="secondary" onClick={() => void saveMarkdown()}>
             Save
           </button>
           <button type="button" className="primary" onClick={() => void copyToClipboard()}>
             Copy to Clipboard
           </button>
-          {copyStatus ? (
-            <span className="copy-status" role="status" aria-live="polite">
-              {copyStatus}
-            </span>
-          ) : null}
         </div>
       </section>
     </div>
   );
+}
+
+type SaveFilePicker = (options: {
+  suggestedName: string;
+  types: Array<{ description: string; accept: Record<string, string[]> }>;
+}) => Promise<{ createWritable: () => Promise<{ write: (blob: Blob) => Promise<void>; close: () => Promise<void> }> }>;
+
+async function writeWithSavePicker(fileName: string, blob: Blob): Promise<boolean> {
+  const picker = (window as typeof window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
+  if (!picker) return false;
+
+  try {
+    const handle = await picker({
+      suggestedName: fileName,
+      types: [{ description: "Markdown report", accept: { "text/markdown": [".md"] } }]
+    });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch {
+    return false;
+  }
 }

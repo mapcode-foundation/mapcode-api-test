@@ -511,7 +511,7 @@ export function App() {
             <b>{requestDelaySeconds === 0 ? "full speed" : `${requestDelaySeconds}s`}</b>
           </label>
           <button type="button" className="secondary" onClick={() => void handleSaveReport()}>
-            Save report
+            Report
           </button>
         </div>
       </section>

@@ -68,6 +68,8 @@ describe("App shell", () => {
     expect(markup).toContain("Java API (leading) not started");
     expect(markup).toContain("TypeScript API (ported) not started");
     expect(markup).not.toContain("Java API (leading) unknown");
+    expect(markup).toContain(">Report</button>");
+    expect(markup).not.toContain("Save report");
   });
 
   it("disables Start while APIs are not operational", () => {
