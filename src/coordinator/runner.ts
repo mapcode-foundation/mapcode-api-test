@@ -2,6 +2,8 @@ import { compareResponses } from "./comparator";
 import { fetchService } from "./http-client";
 import type { Discrepancy, PointState, RequestCase, RunnerEvent, RunProfileName, RunSummary, ServiceResponse } from "../shared/types";
 
+const CURRENT_THROUGHPUT_WINDOW_MS = 5_000;
+
 export interface RunnerInput {
   productionBaseUrl: string;
   candidateBaseUrl: string;
@@ -25,6 +27,7 @@ export class Runner {
   private now: () => number;
   private currentRequestController: AbortController | undefined;
   private readonly fixtureTerminalStates = new Map<string, PointState>();
+  private readonly completedRequestFinishedAtMs: number[] = [];
 
   constructor(private readonly input: RunnerInput) {
     this.summary = {
@@ -86,7 +89,6 @@ export class Runner {
       let production: ServiceResponse;
       let candidate: ServiceResponse;
       const requestController = new AbortController();
-      const requestStartedAtMs = this.now();
       this.currentRequestController = requestController;
       try {
         ({ production, candidate } = await this.fetchPair(request, requestController.signal));
@@ -94,7 +96,7 @@ export class Runner {
         if (this.stopped) break;
         this.summary.failures += 1;
         this.summary.completedCases += 1;
-        this.updateThroughput(requestStartedAtMs, this.now(), runStartedAtMs);
+        this.updateThroughput(this.now(), runStartedAtMs);
         const discrepancy = createInfrastructureDiscrepancy(request, error);
         this.emit({ type: "discrepancy", discrepancy });
         if (request.fixtureId) this.emitFixtureTerminalState(request.fixtureId, "blocked");
@@ -131,7 +133,7 @@ export class Runner {
         this.emitFixtureTerminalState(request.fixtureId, "passed");
       }
       this.summary.completedCases += 1;
-      this.updateThroughput(requestStartedAtMs, this.now(), runStartedAtMs);
+      this.updateThroughput(this.now(), runStartedAtMs);
       this.emitSummary();
       await this.waitBetweenRequests(index);
     }
@@ -158,10 +160,14 @@ export class Runner {
     await this.sleep(this.requestDelayMs);
   }
 
-  private updateThroughput(requestStartedAtMs: number, requestFinishedAtMs: number, runStartedAtMs: number): void {
-    const requestDurationMs = Math.max(requestFinishedAtMs - requestStartedAtMs, 1);
+  private updateThroughput(requestFinishedAtMs: number, runStartedAtMs: number): void {
     const elapsedMs = Math.max(requestFinishedAtMs - runStartedAtMs, 1);
-    this.summary.currentRequestsPerSecond = roundRequestsPerSecond(1000 / requestDurationMs);
+    this.completedRequestFinishedAtMs.push(requestFinishedAtMs);
+    const windowStartedAtMs = requestFinishedAtMs - CURRENT_THROUGHPUT_WINDOW_MS;
+    while (this.completedRequestFinishedAtMs[0] < windowStartedAtMs) this.completedRequestFinishedAtMs.shift();
+    this.summary.currentRequestsPerSecond = roundRequestsPerSecond(
+      (this.completedRequestFinishedAtMs.length * 1000) / CURRENT_THROUGHPUT_WINDOW_MS
+    );
     this.summary.averageRequestsPerSecond = roundRequestsPerSecond((this.summary.completedCases * 1000) / elapsedMs);
   }
 }

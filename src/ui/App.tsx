@@ -519,7 +519,7 @@ export function App() {
             <b>
               {summary.completedCases}/{summary.totalCases} cases
             </b>
-            <span className="progress-rate">Current {formatRequestsPerSecond(summary.currentRequestsPerSecond)} reqs/sec</span>
+            <span className="progress-rate">Current 5s {formatRequestsPerSecond(summary.currentRequestsPerSecond)} reqs/sec</span>
             <span className="progress-rate">Avg {formatRequestsPerSecond(summary.averageRequestsPerSecond)} reqs/sec</span>
           </div>
           <div

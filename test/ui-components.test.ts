@@ -78,7 +78,7 @@ describe("App shell", () => {
   it("shows current and average throughput in the run progress bar", () => {
     const markup = renderToStaticMarkup(createElement(App));
 
-    expect(markup).toContain("Current 0.0 reqs/sec");
+    expect(markup).toContain("Current 5s 0.0 reqs/sec");
     expect(markup).toContain("Avg 0.0 reqs/sec");
   });
 

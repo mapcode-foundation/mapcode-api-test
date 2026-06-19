@@ -76,7 +76,7 @@ describe("Runner", () => {
   });
 
   it("reports current and average request throughput", async () => {
-    const times = [1000, 1000, 1250];
+    const times = [1000, 1250];
     const runner = new Runner({
       productionBaseUrl: "http://java.test",
       candidateBaseUrl: "http://ts.test",
@@ -99,8 +99,30 @@ describe("Runner", () => {
 
     expect(summaries).toEqual([
       { current: 0, average: 0 },
-      { current: 4, average: 4 }
+      { current: 0.2, average: 4 }
     ]);
+  });
+
+  it("reports current throughput as a rolling five-second average", async () => {
+    const secondRequest: RequestCase = { ...request, id: "territory-json", path: "/mapcode/territories/NLD" };
+    const thirdRequest: RequestCase = { ...request, id: "status-json", path: "/mapcode/status" };
+    const times = [0, 1000, 2000, 8000];
+    const runner = new Runner({
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
+      cases: [request, secondRequest, thirdRequest],
+      now: () => times.shift() ?? 8000,
+      fetchPair: async () => ({ production: response("production", "1"), candidate: response("candidate", "1") })
+    });
+    const summaries: number[] = [];
+
+    runner.onEvent((event) => {
+      if (event.type === "run-summary") summaries.push(event.summary.currentRequestsPerSecond);
+    });
+
+    await runner.start();
+
+    expect(summaries).toEqual([0, 0.2, 0.4, 0.2]);
   });
 
   it("can stop while paused without fetching a case", async () => {
