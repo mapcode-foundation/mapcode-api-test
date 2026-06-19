@@ -1,12 +1,21 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Discrepancy, RunSummary, ServiceResponse } from "../shared/types";
+import type { Discrepancy, RunSummary, ServiceKind, ServiceMode, ServiceResponse } from "../shared/types";
+
+export type ServiceReportDetails = {
+  label: string;
+  mode: ServiceMode;
+  baseUrl: string;
+  sourcePath: string;
+  version?: string;
+};
 
 export interface ReportInput {
   outputDir: string;
   summary: RunSummary;
   discrepancies: Discrepancy[];
   serviceVersions: { production?: string; candidate?: string };
+  services: Record<ServiceKind, ServiceReportDetails>;
 }
 
 export async function writeReports(input: ReportInput): Promise<{
@@ -57,6 +66,12 @@ function renderMarkdown(input: ReportInput): string {
     `Production version: ${input.serviceVersions.production ?? "unknown"}`,
     `Candidate version: ${input.serviceVersions.candidate ?? "unknown"}`,
     "",
+    "## Services",
+    "",
+    ...renderServiceDetails(input.services.production),
+    "",
+    ...renderServiceDetails(input.services.candidate),
+    "",
     "## Discrepancies",
     ""
   ];
@@ -96,6 +111,17 @@ function renderMarkdown(input: ReportInput): string {
   }
 
   return lines.join("\n");
+}
+
+function renderServiceDetails(service: ServiceReportDetails): string[] {
+  return [
+    `### ${service.label}`,
+    "",
+    `- Mode: \`${service.mode}\``,
+    `- Base URL: \`${service.baseUrl}\``,
+    `- Source tree: \`${service.sourcePath}\``,
+    `- Version: \`${service.version ?? "unknown"}\``
+  ];
 }
 
 function renderEvidence(response: ServiceResponse): string[] {

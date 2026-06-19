@@ -4,10 +4,10 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
 import { loadFixtureSet, expandFixtureCases, resolveFixtureSet } from "./fixture-store";
-import { renderReport, writeReports } from "./reporter";
+import { renderReport, writeReports, type ServiceReportDetails } from "./reporter";
 import { Runner } from "./runner";
 import { isReady } from "./service-manager";
-import { normalizeServiceBaseUrl } from "./service-url";
+import { normalizeServiceBaseUrl, resolveServiceUrl } from "./service-url";
 import type {
   Discrepancy,
   RunProfileName,
@@ -56,6 +56,7 @@ export function createServerApp(input: ServerInput = {}) {
   let lastSummary: RunSummary | undefined;
   let lastProfile: RunProfileName = "Fast";
   let lastSeed = defaultSeed;
+  let lastReportServices: Record<ServiceKind, ServiceReportDetails> | undefined;
   let discrepancies: Discrepancy[] = [];
   const services: Record<ServiceKind, ServiceState> = {
     production: {
@@ -120,6 +121,28 @@ export function createServerApp(input: ServerInput = {}) {
       sourcePath: service.sourcePath,
       availability: service.availability,
       logs: service.logs.slice(-40)
+    };
+  }
+
+  async function resolveReportServices(): Promise<Record<ServiceKind, ServiceReportDetails>> {
+    const [productionVersion, candidateVersion] = await Promise.all([
+      fetchServiceVersion(services.production.baseUrl),
+      fetchServiceVersion(services.candidate.baseUrl)
+    ]);
+
+    return {
+      production: reportService(services.production, productionVersion),
+      candidate: reportService(services.candidate, candidateVersion)
+    };
+  }
+
+  function reportService(service: ServiceState, version?: string): ServiceReportDetails {
+    return {
+      label: service.label,
+      mode: service.mode,
+      baseUrl: service.baseUrl,
+      sourcePath: service.sourcePath,
+      version
     };
   }
 
@@ -347,6 +370,7 @@ export function createServerApp(input: ServerInput = {}) {
       const cases = expandFixtureCases(fixtureSet, profile);
       const productionBaseUrl = services.production.baseUrl;
       const candidateBaseUrl = services.candidate.baseUrl;
+      const reportServices = await resolveReportServices();
       const token = activeRunToken;
       const runner = new Runner({
         productionBaseUrl,
@@ -360,6 +384,7 @@ export function createServerApp(input: ServerInput = {}) {
       lastProfile = profile;
       lastSeed = fixtureSet.seed;
       lastSummary = undefined;
+      lastReportServices = reportServices;
       discrepancies = [];
       runState = "running";
       activeRunner = runner;
@@ -414,11 +439,13 @@ export function createServerApp(input: ServerInput = {}) {
     return res.json({ state: runState });
   });
   app.post("/api/report/save", async (_req, res, next) => {
+    const reportServices = lastReportServices ?? (await resolveReportServices());
     const reportInput = {
       outputDir: "reports",
       summary: lastSummary ?? fallbackSummary(lastProfile, lastSeed, discrepancies.length),
       discrepancies,
-      serviceVersions: { production: "attached", candidate: "attached" }
+      serviceVersions: { production: reportServices.production.version, candidate: reportServices.candidate.version },
+      services: reportServices
     };
     try {
       const paths = await writeReports(reportInput);
@@ -467,6 +494,33 @@ export function parseRequestDelayMs(value: unknown): number {
 
 function readBodyString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+async function fetchServiceVersion(baseUrl: string): Promise<string | undefined> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error("Version request timed out")), 5_000);
+
+  try {
+    const response = await fetch(resolveServiceUrl(baseUrl, "/mapcode/version"), {
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+    const body = (await response.text()).trim();
+    if (!response.ok || body.length === 0) return undefined;
+
+    try {
+      const parsed = JSON.parse(body) as { version?: unknown };
+      if (typeof parsed.version === "string" && parsed.version.trim().length > 0) return parsed.version.trim();
+    } catch {
+      // Plain-text versions are accepted for local or legacy service builds.
+    }
+
+    return body;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function fallbackSummary(profile: RunProfileName, seed: number, failures: number): RunSummary {

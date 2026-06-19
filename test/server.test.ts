@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { buildServiceStartPlan, createServerApp, parseRequestDelayMs } from "../src/coordinator/server";
 import { inject } from "./fixtures/inject";
@@ -193,6 +193,58 @@ describe("coordinator server", () => {
 
     expect(response.statusCode).toBe(200);
     expect(stoppedBaseUrls).toEqual(["http://127.0.0.1:19081", "http://127.0.0.1:19082"]);
+  });
+
+  it("saves active service URLs, source trees, and resolved versions in reports", async () => {
+    const app = createServerApp({ env: {} });
+    const production = await startMockService({
+      "/java/mapcode/status": { status: 200, body: "ok" },
+      "/java/mapcode/version": { status: 200, body: '{"version":"2.4.19.3"}' }
+    });
+    const candidate = await startMockService({
+      "/ts/mapcode/status": { status: 200, body: "ok" },
+      "/ts/mapcode/version": { status: 200, body: '{"version":"2.5.1"}' }
+    });
+
+    try {
+      const productionBaseUrl = `${production.baseUrl}/java`;
+      const candidateBaseUrl = `${candidate.baseUrl}/ts`;
+      await inject(app, "/api/services/production/config", {
+        method: "POST",
+        body: { baseUrl: productionBaseUrl, sourcePath: "/tmp/mapcode-rest-service" }
+      });
+      await inject(app, "/api/services/candidate/config", {
+        method: "POST",
+        body: { baseUrl: candidateBaseUrl, sourcePath: "/tmp/mapcode-rest-service-ts" }
+      });
+
+      const response = await inject(app, "/api/report/save", { method: "POST" });
+      const report = JSON.parse(response.body);
+      const json = JSON.parse(await readFile(report.jsonPath, "utf8"));
+
+      expect(response.statusCode).toBe(200);
+      expect(report.markdown).toContain("- Base URL: `" + productionBaseUrl + "`");
+      expect(report.markdown).toContain("- Source tree: `/tmp/mapcode-rest-service`");
+      expect(report.markdown).toContain("- Version: `2.4.19.3`");
+      expect(report.markdown).toContain("- Base URL: `" + candidateBaseUrl + "`");
+      expect(report.markdown).toContain("- Source tree: `/tmp/mapcode-rest-service-ts`");
+      expect(report.markdown).toContain("- Version: `2.5.1`");
+      expect(json.services.production).toMatchObject({
+        baseUrl: productionBaseUrl,
+        sourcePath: "/tmp/mapcode-rest-service",
+        version: "2.4.19.3"
+      });
+      expect(json.services.candidate).toMatchObject({
+        baseUrl: candidateBaseUrl,
+        sourcePath: "/tmp/mapcode-rest-service-ts",
+        version: "2.5.1"
+      });
+      expect(production.requests.map((request) => request.path)).toEqual(["/java/mapcode/status", "/java/mapcode/version"]);
+      expect(candidate.requests.map((request) => request.path)).toEqual(["/ts/mapcode/status", "/ts/mapcode/version"]);
+    } finally {
+      await production.close();
+      await candidate.close();
+    }
   });
 
   it("rejects automatic start when the source repo path does not exist", async () => {
