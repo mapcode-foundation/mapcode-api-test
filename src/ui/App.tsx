@@ -52,7 +52,9 @@ const initialSummary: RunSummary = {
   totalCases: 0,
   completedCases: 0,
   failures: 0,
-  roundTrips: 0
+  roundTrips: 0,
+  currentRequestsPerSecond: 0,
+  averageRequestsPerSecond: 0
 };
 
 type RunState = "idle" | "running" | "paused" | "stopped";
@@ -63,6 +65,10 @@ function queuedFixtureStates(points: FixturePoint[]): Record<string, PointState>
   return Object.fromEntries(points.map((point) => [point.id, "queued" as PointState]));
 }
 
+function formatRequestsPerSecond(value: number): string {
+  return value.toFixed(1);
+}
+
 export function App() {
   const [profile, setProfile] = useState<RunProfileName>("Fast");
   const [summary, setSummary] = useState<RunSummary>(initialSummary);
@@ -70,8 +76,8 @@ export function App() {
   const [cases, setCases] = useState<RequestCase[]>([]);
   const [fixtureStates, setFixtureStates] = useState<Record<string, PointState>>({});
   const [currentRequest, setCurrentRequest] = useState<RequestCase | undefined>();
-  const [javaResponse, setJavaResponse] = useState<ServiceResponse | undefined>();
-  const [typescriptResponse, setTypeScriptResponse] = useState<ServiceResponse | undefined>();
+  const [productionResponse, setProductionResponse] = useState<ServiceResponse | undefined>();
+  const [candidateResponse, setCandidateResponse] = useState<ServiceResponse | undefined>();
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [selectedDiscrepancy, setSelectedDiscrepancy] = useState<Discrepancy | undefined>();
   const [hasTomTomApiKey, setHasTomTomApiKey] = useState<boolean | undefined>();
@@ -130,8 +136,8 @@ export function App() {
         setDiscrepancies([]);
         setSelectedDiscrepancy(undefined);
         setCurrentRequest(undefined);
-        setJavaResponse(undefined);
-        setTypeScriptResponse(undefined);
+        setProductionResponse(undefined);
+        setCandidateResponse(undefined);
         resetFixtureStates(fixtureSet.points);
         setSummary((current) => ({
           ...current,
@@ -140,7 +146,9 @@ export function App() {
           totalCases: nextCases.length,
           completedCases: 0,
           failures: 0,
-          roundTrips: 0
+          roundTrips: 0,
+          currentRequestsPerSecond: 0,
+          averageRequestsPerSecond: 0
         }));
         setReport(undefined);
         setLoadMessage(`${fixtureSet.points.length} fixtures pinned`);
@@ -169,13 +177,13 @@ export function App() {
     let cancelled = false;
     const pollServices = async () => {
       const nextServices = await Promise.all([
-        checkService("java").catch(() => undefined),
-        checkService("typescript").catch(() => undefined)
+        checkService("production").catch(() => undefined),
+        checkService("candidate").catch(() => undefined)
       ]);
       if (cancelled) return;
       setServices((current) => ({
-        java: nextServices[0] ?? current.java,
-        typescript: nextServices[1] ?? current.typescript
+        production: nextServices[0] ?? current.production,
+        candidate: nextServices[1] ?? current.candidate
       }));
     };
     const interval = window.setInterval(() => void pollServices(), 10_000);
@@ -199,7 +207,7 @@ export function App() {
           ? "map key on server"
           : "map key missing";
   const showTomTomModal = isMapModalOpen && !hasTomTomApiKey;
-  const canStartRun = services.java.availability === "available" && services.typescript.availability === "available";
+  const canStartRun = services.production.availability === "available" && services.candidate.availability === "available";
   const isRunActive = runState === "running" || runState === "paused";
   const canStartButton = canStartRun && !isRunActive;
 
@@ -220,8 +228,8 @@ export function App() {
         break;
       case "current-case":
         setCurrentRequest(event.request);
-        setJavaResponse(event.java);
-        setTypeScriptResponse(event.typescript);
+        setProductionResponse(event.production);
+        setCandidateResponse(event.candidate);
         break;
       case "discrepancy":
         setDiscrepancies((current) =>
@@ -275,8 +283,8 @@ export function App() {
     setDiscrepancies([]);
     setSelectedDiscrepancy(undefined);
     setCurrentRequest(undefined);
-    setJavaResponse(undefined);
-    setTypeScriptResponse(undefined);
+    setProductionResponse(undefined);
+    setCandidateResponse(undefined);
     resetFixtureStates(fixtures);
     setReport(undefined);
 
@@ -378,7 +386,7 @@ export function App() {
   }
 
   async function handleCheckService(kind: ServiceKind): Promise<void> {
-    const service = await checkService(kind);
+    const service = await checkService(kind, serviceDraftUrl);
     setServices((current) => ({ ...current, [kind]: service }));
   }
 
@@ -422,24 +430,24 @@ export function App() {
     setIsAutoStartingServices(true);
     setLoadMessage("Starting APIs");
     const startInputs = {
-      java: { baseUrl: services.java.baseUrl, sourcePath: services.java.sourcePath },
-      typescript: { baseUrl: services.typescript.baseUrl, sourcePath: services.typescript.sourcePath }
+      production: { baseUrl: services.production.baseUrl, sourcePath: services.production.sourcePath },
+      candidate: { baseUrl: services.candidate.baseUrl, sourcePath: services.candidate.sourcePath }
     };
 
     setServices((current) => ({
-      java: { ...current.java, mode: "auto", availability: "starting" },
-      typescript: { ...current.typescript, mode: "auto", availability: "starting" }
+      production: { ...current.production, mode: "auto", availability: "starting" },
+      candidate: { ...current.candidate, mode: "auto", availability: "starting" }
     }));
 
     try {
       const results = await Promise.allSettled([
-        startService("java", startInputs.java.baseUrl, startInputs.java.sourcePath),
-        startService("typescript", startInputs.typescript.baseUrl, startInputs.typescript.sourcePath)
+        startService("production", startInputs.production.baseUrl, startInputs.production.sourcePath),
+        startService("candidate", startInputs.candidate.baseUrl, startInputs.candidate.sourcePath)
       ]);
       const nextServices = await getServices().catch(() => undefined);
       setServices((current) => ({
-        java: results[0].status === "fulfilled" ? results[0].value : nextServices?.java ?? current.java,
-        typescript: results[1].status === "fulfilled" ? results[1].value : nextServices?.typescript ?? current.typescript
+        production: results[0].status === "fulfilled" ? results[0].value : nextServices?.production ?? current.production,
+        candidate: results[1].status === "fulfilled" ? results[1].value : nextServices?.candidate ?? current.candidate
       }));
 
       const failed = results.filter((result) => result.status === "rejected").length;
@@ -496,7 +504,7 @@ export function App() {
             </button>
           </div>
           <div className="service-health" aria-label="Service status">
-            {(["java", "typescript"] as const).map((kind) => (
+            {(["production", "candidate"] as const).map((kind) => (
               <ServiceStatusButton key={kind} service={services[kind]} onClick={() => openServiceConfig(kind)} />
             ))}
             <span className="status-chip muted">{mapKeyStatus}</span>
@@ -507,10 +515,12 @@ export function App() {
       <section className="toolbar" aria-label="Run controls">
         <div className="progress-block">
           <div className="progress-copy">
-            <span>{runState}</span>
+            <span className="progress-state">{runState}</span>
             <b>
               {summary.completedCases}/{summary.totalCases} cases
             </b>
+            <span className="progress-rate">Current {formatRequestsPerSecond(summary.currentRequestsPerSecond)} reqs/sec</span>
+            <span className="progress-rate">Avg {formatRequestsPerSecond(summary.averageRequestsPerSecond)} reqs/sec</span>
           </div>
           <div
             className="progress-track"
@@ -604,8 +614,8 @@ export function App() {
               <span className="catalog-count">{cases.length} queued requests</span>
             </div>
             <div className="service-grid">
-              <ServicePane title="Java API (leading)" request={currentCase} response={javaResponse} />
-              <ServicePane title="TypeScript API (ported)" request={currentCase} response={typescriptResponse} />
+              <ServicePane title="Production API" request={currentCase} response={productionResponse} />
+              <ServicePane title="Candidate API" request={currentCase} response={candidateResponse} />
             </div>
           </div>
 
@@ -689,18 +699,18 @@ function isRunnerEvent(event: unknown): event is RunnerEvent {
 }
 
 const initialServices: ServicesResponse = {
-  java: {
-    kind: "java",
-    label: "Java API (leading)",
+  production: {
+    kind: "production",
+    label: "Production API",
     mode: "manual",
     baseUrl: "http://127.0.0.1:8081",
     sourcePath: "../mapcode-rest-service",
     availability: "unknown",
     logs: []
   },
-  typescript: {
-    kind: "typescript",
-    label: "TypeScript API (ported)",
+  candidate: {
+    kind: "candidate",
+    label: "Candidate API",
     mode: "manual",
     baseUrl: "http://127.0.0.1:8082",
     sourcePath: "../mapcode-rest-service-ts",

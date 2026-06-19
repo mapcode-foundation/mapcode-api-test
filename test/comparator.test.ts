@@ -1,7 +1,7 @@
 import { compareCanonical, compareResponses, roundTripWithinTolerance } from "../src/coordinator/comparator";
 import type { ServiceResponse } from "../src/shared/types";
 
-function response(service: "java" | "typescript", canonical: unknown, status = 200, contentType = "application/json"): ServiceResponse {
+function response(service: "production" | "candidate", canonical: unknown, status = 200, contentType = "application/json"): ServiceResponse {
   return {
     service,
     status,
@@ -22,7 +22,7 @@ describe("compareCanonical", () => {
         path: "$.mapcodes[0].territory",
         expected: "NLD",
         actual: "AAA",
-        message: "Expected Java value to match TypeScript value"
+        message: "Expected Production value to match Candidate value"
       }
     ]);
   });
@@ -30,25 +30,25 @@ describe("compareCanonical", () => {
   it("allows top-level time and reference values to differ when both services emit values", () => {
     expect(
       compareCanonical(
-        { time: "2026-06-18T10:00:00Z", reference: "java-run-1" },
-        { time: "2026-06-18T10:00:01Z", reference: "ts-run-2" }
+        { time: "2026-06-18T10:00:00Z", reference: "production-run-1" },
+        { time: "2026-06-18T10:00:01Z", reference: "candidate-run-2" }
       )
     ).toEqual([]);
   });
 
-  it("requires TypeScript to emit a real top-level time or reference when Java does", () => {
-    expect(compareCanonical({ time: "2026-06-18T10:00:00Z", reference: "java-run-1" }, { time: null })).toEqual([
+  it("requires Candidate to emit a real top-level time or reference when Production does", () => {
+    expect(compareCanonical({ time: "2026-06-18T10:00:00Z", reference: "production-run-1" }, { time: null })).toEqual([
       {
         path: "$.reference",
-        expected: "java-run-1",
+        expected: "production-run-1",
         actual: undefined,
-        message: "Expected TypeScript to emit a non-null value when Java emits this field"
+        message: "Expected Candidate to emit a non-null value when Production emits this field"
       },
       {
         path: "$.time",
         expected: "2026-06-18T10:00:00Z",
         actual: null,
-        message: "Expected TypeScript to emit a non-null value when Java emits this field"
+        message: "Expected Candidate to emit a non-null value when Production emits this field"
       }
     ]);
   });
@@ -57,8 +57,8 @@ describe("compareCanonical", () => {
 describe("compareResponses", () => {
   it("allows /mapcode/version value differences but still requires object shape", () => {
     const diffs = compareResponses(
-      response("java", { version: "2.4.19.2" }),
-      response("typescript", { version: "0.1.0" }),
+      response("production", { version: "2.4.19.2" }),
+      response("candidate", { version: "0.1.0" }),
       "/mapcode/version"
     );
 
@@ -68,8 +68,8 @@ describe("compareResponses", () => {
   it("allows /mapcode/json/version and /mapcode/xml/version value differences", () => {
     expect(
       compareResponses(
-        response("java", { version: "2.4.19.2" }, 200, "application/json"),
-        response("typescript", { version: "0.1.0" }, 200, "application/json"),
+        response("production", { version: "2.4.19.2" }, 200, "application/json"),
+        response("candidate", { version: "0.1.0" }, 200, "application/json"),
         "/mapcode/json/version",
         { format: "json" }
       )
@@ -77,8 +77,8 @@ describe("compareResponses", () => {
 
     expect(
       compareResponses(
-        response("java", { version: "2.4.19.2" }, 200, "application/xml"),
-        response("typescript", { version: "0.1.0" }, 200, "application/xml"),
+        response("production", { version: "2.4.19.2" }, 200, "application/xml"),
+        response("candidate", { version: "0.1.0" }, 200, "application/xml"),
         "/mapcode/xml/version",
         { format: "xml" }
       )
@@ -86,7 +86,7 @@ describe("compareResponses", () => {
   });
 
   it("requires /mapcode/version responses to contain a version field", () => {
-    const diffs = compareResponses(response("java", { version: "2.4.19.2" }), response("typescript", {}), "/mapcode/version");
+    const diffs = compareResponses(response("production", { version: "2.4.19.2" }), response("candidate", {}), "/mapcode/version");
 
     expect(diffs).toEqual([
       {
@@ -99,26 +99,26 @@ describe("compareResponses", () => {
   });
 
   it("requires matching status codes", () => {
-    const diffs = compareResponses(response("java", {}, 403), response("typescript", {}, 404), "/mapcode/codes");
+    const diffs = compareResponses(response("production", {}, 403), response("candidate", {}, 404), "/mapcode/codes");
 
     expect(diffs[0].path).toBe("$.status");
   });
 
   it("validates content type when a request format is provided", () => {
     const diffs = compareResponses(
-      response("java", {}, 200, "application/json"),
-      response("typescript", {}, 200, "application/json"),
+      response("production", {}, 200, "application/json"),
+      response("candidate", {}, 200, "application/json"),
       "/mapcode/territories",
       { format: "xml" }
     );
 
-    expect(diffs.map((diff) => diff.path)).toEqual(["$.java.contentType", "$.typescript.contentType"]);
+    expect(diffs.map((diff) => diff.path)).toEqual(["$.production.contentType", "$.candidate.contentType"]);
   });
 
   it("does not require formatted content types for empty /mapcode/status health responses", () => {
     const diffs = compareResponses(
-      response("java", null, 200, ""),
-      response("typescript", null, 200, "text/plain; charset=utf-8"),
+      response("production", null, 200, ""),
+      response("candidate", null, 200, "text/plain; charset=utf-8"),
       "/mapcode/status",
       { format: "json" }
     );
@@ -128,8 +128,8 @@ describe("compareResponses", () => {
 
   it("allows small lat/lon drift for roundtrip coordinate responses", () => {
     const diffs = compareResponses(
-      response("java", { latDeg: 52.376514, lonDeg: 4.908543 }),
-      response("typescript", { latDeg: 52.376524, lonDeg: 4.908533 }),
+      response("production", { latDeg: 52.376514, lonDeg: 4.908543 }),
+      response("candidate", { latDeg: 52.376524, lonDeg: 4.908533 }),
       "/mapcode/coords/ABC.123",
       { format: "json", expectation: "roundtrip" }
     );
@@ -139,8 +139,8 @@ describe("compareResponses", () => {
 
   it("accepts coordinate differences up to 0.00001 degrees in encoded-decoded coordinate responses", () => {
     const diffs = compareResponses(
-      response("java", { lat: 52.376514, lon: 4.908543 }),
-      response("typescript", { lat: 52.376524, lon: 4.908533 }),
+      response("production", { lat: 52.376514, lon: 4.908543 }),
+      response("candidate", { lat: 52.376524, lon: 4.908533 }),
       "/mapcode/coords/ABC.123",
       { format: "json", expectation: "parity" }
     );
@@ -150,8 +150,8 @@ describe("compareResponses", () => {
 
   it("reports coordinate differences larger than 0.00001 degrees", () => {
     const diffs = compareResponses(
-      response("java", { latDeg: 52.376514, lonDeg: 4.908543 }),
-      response("typescript", { latDeg: 52.376526, lonDeg: 4.908543 }),
+      response("production", { latDeg: 52.376514, lonDeg: 4.908543 }),
+      response("candidate", { latDeg: 52.376526, lonDeg: 4.908543 }),
       "/mapcode/coords/ABC.123",
       { format: "json", expectation: "parity" }
     );
@@ -167,7 +167,7 @@ describe("roundTripWithinTolerance", () => {
     );
   });
 
-  it("fails when Java and TypeScript decoded points drift apart beyond tolerance", () => {
+  it("fails when Production and Candidate decoded points drift apart beyond tolerance", () => {
     expect(roundTripWithinTolerance({ lat: 0, lon: 0 }, { lat: 0.00001, lon: 0 }, { lat: 0, lon: 0.01 }, 10).ok).toBe(false);
   });
 });

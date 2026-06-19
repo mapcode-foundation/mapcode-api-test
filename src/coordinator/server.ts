@@ -7,6 +7,7 @@ import { loadFixtureSet, expandFixtureCases, resolveFixtureSet } from "./fixture
 import { renderReport, writeReports } from "./reporter";
 import { Runner } from "./runner";
 import { isReady } from "./service-manager";
+import { normalizeServiceBaseUrl } from "./service-url";
 import type {
   Discrepancy,
   RunProfileName,
@@ -32,15 +33,16 @@ export type ServiceStartStep = {
   env: Record<string, string>;
   waitForExit: boolean;
 };
+type ServiceRuntime = "java" | "node";
 
-const defaultJavaBaseUrl = "http://127.0.0.1:8081";
-const defaultTypeScriptBaseUrl = "http://127.0.0.1:8082";
-const defaultJavaSourcePath = "../mapcode-rest-service";
-const defaultTypeScriptSourcePath = "../mapcode-rest-service-ts";
+const defaultProductionBaseUrl = "http://127.0.0.1:8081";
+const defaultCandidateBaseUrl = "http://127.0.0.1:8082";
+const defaultProductionSourcePath = "../mapcode-rest-service";
+const defaultCandidateSourcePath = "../mapcode-rest-service-ts";
 const defaultSeed = 20260617;
 const serviceLabels: Record<ServiceKind, string> = {
-  java: "Java API (leading)",
-  typescript: "TypeScript API (ported)"
+  production: "Production API",
+  candidate: "Candidate API"
 };
 
 export function createServerApp(input: ServerInput = {}) {
@@ -56,21 +58,21 @@ export function createServerApp(input: ServerInput = {}) {
   let lastSeed = defaultSeed;
   let discrepancies: Discrepancy[] = [];
   const services: Record<ServiceKind, ServiceState> = {
-    java: {
-      kind: "java",
-      label: serviceLabels.java,
+    production: {
+      kind: "production",
+      label: serviceLabels.production,
       mode: "manual",
-      baseUrl: defaultJavaBaseUrl,
-      sourcePath: defaultJavaSourcePath,
+      baseUrl: defaultProductionBaseUrl,
+      sourcePath: defaultProductionSourcePath,
       availability: "unknown",
       logs: []
     },
-    typescript: {
-      kind: "typescript",
-      label: serviceLabels.typescript,
+    candidate: {
+      kind: "candidate",
+      label: serviceLabels.candidate,
       mode: "manual",
-      baseUrl: defaultTypeScriptBaseUrl,
-      sourcePath: defaultTypeScriptSourcePath,
+      baseUrl: defaultCandidateBaseUrl,
+      sourcePath: defaultCandidateSourcePath,
       availability: "unknown",
       logs: []
     }
@@ -104,8 +106,8 @@ export function createServerApp(input: ServerInput = {}) {
 
   function publicServices(): Record<ServiceKind, ServiceStatus> {
     return {
-      java: publicService(services.java),
-      typescript: publicService(services.typescript)
+      production: publicService(services.production),
+      candidate: publicService(services.candidate)
     };
   }
 
@@ -146,10 +148,10 @@ export function createServerApp(input: ServerInput = {}) {
   }
 
   async function unavailableServiceLabels(): Promise<string[]> {
-    const [javaReady, typescriptReady] = await Promise.all([refreshService("java"), refreshService("typescript")]);
+    const [productionReady, candidateReady] = await Promise.all([refreshService("production"), refreshService("candidate")]);
     const unavailable: string[] = [];
-    if (!javaReady) unavailable.push(serviceLabels.java);
-    if (!typescriptReady) unavailable.push(serviceLabels.typescript);
+    if (!productionReady) unavailable.push(serviceLabels.production);
+    if (!candidateReady) unavailable.push(serviceLabels.candidate);
     return unavailable;
   }
 
@@ -286,14 +288,15 @@ export function createServerApp(input: ServerInput = {}) {
   app.get("/api/services", (_req, res) => res.json(publicServices()));
   app.post("/api/services/stop", async (_req, res) => {
     await Promise.all([
-      stopService("java", { markUnavailable: true, log: true, stopPortListener: true }),
-      stopService("typescript", { markUnavailable: true, log: true, stopPortListener: true })
+      stopService("production", { markUnavailable: true, log: true, stopPortListener: true }),
+      stopService("candidate", { markUnavailable: true, log: true, stopPortListener: true })
     ]);
     return res.json(publicServices());
   });
   app.post("/api/services/:kind/check", async (req, res) => {
     const kind = parseServiceKind(req.params.kind);
     if (!kind) return res.status(404).json({ error: "Unknown service" });
+    if (typeof req.body?.baseUrl === "string") services[kind].baseUrl = normalizeBaseUrl(req.body.baseUrl);
     await refreshService(kind, { preserveStarting: true });
     return res.json(publicService(services[kind]));
   });
@@ -342,12 +345,12 @@ export function createServerApp(input: ServerInput = {}) {
       const fixtureSet = await loadFixtureSet("fixtures/fixture-set.json");
       const profile = parseProfile(req.body?.profile);
       const cases = expandFixtureCases(fixtureSet, profile);
-      const javaBaseUrl = services.java.baseUrl;
-      const typescriptBaseUrl = services.typescript.baseUrl;
+      const productionBaseUrl = services.production.baseUrl;
+      const candidateBaseUrl = services.candidate.baseUrl;
       const token = activeRunToken;
       const runner = new Runner({
-        javaBaseUrl,
-        typescriptBaseUrl,
+        productionBaseUrl,
+        candidateBaseUrl,
         profile,
         seed: fixtureSet.seed,
         cases,
@@ -368,7 +371,7 @@ export function createServerApp(input: ServerInput = {}) {
           if (token !== activeRunToken) return;
           runState = "stopped";
           activeRunner = undefined;
-          publish({ type: "service-log", service: "java", line: `Run failed: ${formatError(error)}` });
+          publish({ type: "service-log", service: "production", line: `Run failed: ${formatError(error)}` });
           if (lastSummary) publish({ type: "run-complete", summary: lastSummary });
         })
         .finally(() => {
@@ -415,7 +418,7 @@ export function createServerApp(input: ServerInput = {}) {
       outputDir: "reports",
       summary: lastSummary ?? fallbackSummary(lastProfile, lastSeed, discrepancies.length),
       discrepancies,
-      serviceVersions: { java: "attached", typescript: "attached" }
+      serviceVersions: { production: "attached", candidate: "attached" }
     };
     try {
       const paths = await writeReports(reportInput);
@@ -448,7 +451,7 @@ function parseProfile(value: unknown): RunProfileName {
 }
 
 function parseServiceKind(value: string): ServiceKind | undefined {
-  return value === "java" || value === "typescript" ? value : undefined;
+  return value === "production" || value === "candidate" ? value : undefined;
 }
 
 function parseTilePart(value: string): number | undefined {
@@ -474,7 +477,9 @@ function fallbackSummary(profile: RunProfileName, seed: number, failures: number
     totalCases: 0,
     completedCases: 0,
     failures,
-    roundTrips: 0
+    roundTrips: 0,
+    currentRequestsPerSecond: 0,
+    averageRequestsPerSecond: 0
   };
 }
 
@@ -524,11 +529,7 @@ function listeningPids(port: string): Promise<number[]> {
 }
 
 function normalizeBaseUrl(value: string): string {
-  const url = new URL(value);
-  url.pathname = "";
-  url.search = "";
-  url.hash = "";
-  return url.toString().replace(/\/$/, "");
+  return normalizeServiceBaseUrl(value);
 }
 
 function portFromBaseUrl(baseUrl: string): string {
@@ -536,10 +537,11 @@ function portFromBaseUrl(baseUrl: string): string {
   return url.port || (url.protocol === "https:" ? "443" : "80");
 }
 
-export function buildServiceStartPlan(kind: ServiceKind, baseUrl: string, sourcePath: string): ServiceStartStep[] {
+export function buildServiceStartPlan(_kind: ServiceKind, baseUrl: string, sourcePath: string): ServiceStartStep[] {
   const port = portFromBaseUrl(baseUrl);
   const resolvedSourcePath = resolve(sourcePath);
-  if (kind === "typescript") {
+  const runtime = detectServiceRuntime(resolvedSourcePath);
+  if (runtime === "node") {
     return [
       {
         command: "npm",
@@ -583,6 +585,12 @@ export function buildServiceStartPlan(kind: ServiceKind, baseUrl: string, source
       waitForExit: false
     }
   ];
+}
+
+function detectServiceRuntime(resolvedSourcePath: string): ServiceRuntime {
+  if (existsSync(resolve(resolvedSourcePath, "package.json"))) return "node";
+  if (existsSync(resolve(resolvedSourcePath, "pom.xml")) || existsSync(resolve(resolvedSourcePath, "deployment/pom.xml"))) return "java";
+  throw new Error(`Could not recognize service repository type at ${resolvedSourcePath}`);
 }
 
 function waitForProcessExit(child: ChildProcessWithoutNullStreams): Promise<number> {

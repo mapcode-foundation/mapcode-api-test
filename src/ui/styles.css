@@ -285,6 +285,11 @@ input {
   text-transform: none;
 }
 
+.progress-rate {
+  white-space: nowrap;
+  text-transform: none;
+}
+
 .progress-track {
   position: relative;
   height: 10px;

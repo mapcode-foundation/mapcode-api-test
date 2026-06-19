@@ -6,7 +6,7 @@ export interface ReportInput {
   outputDir: string;
   summary: RunSummary;
   discrepancies: Discrepancy[];
-  serviceVersions: { java?: string; typescript?: string };
+  serviceVersions: { production?: string; candidate?: string };
 }
 
 export async function writeReports(input: ReportInput): Promise<{
@@ -54,8 +54,8 @@ function renderMarkdown(input: ReportInput): string {
     `Cases: ${input.summary.completedCases}/${input.summary.totalCases}`,
     `Failures: ${input.summary.failures}`,
     `Round trips: ${input.summary.roundTrips}`,
-    `Java version: ${input.serviceVersions.java ?? "unknown"}`,
-    `TypeScript version: ${input.serviceVersions.typescript ?? "unknown"}`,
+    `Production version: ${input.serviceVersions.production ?? "unknown"}`,
+    `Candidate version: ${input.serviceVersions.candidate ?? "unknown"}`,
     "",
     "## Discrepancies",
     ""
@@ -82,11 +82,11 @@ function renderMarkdown(input: ReportInput): string {
       lines.push(`- ${diff.path}: expected \`${formatInline(diff.expected)}\`, actual \`${formatInline(diff.actual)}\` - ${diff.message}`);
     }
     lines.push("");
-    lines.push("Java evidence:");
-    lines.push(...renderEvidence(item.java));
+    lines.push("Production evidence:");
+    lines.push(...renderEvidence(item.production));
     lines.push("");
-    lines.push("TypeScript evidence:");
-    lines.push(...renderEvidence(item.typescript));
+    lines.push("Candidate evidence:");
+    lines.push(...renderEvidence(item.candidate));
     if (item.logExcerpt?.length) {
       lines.push("");
       lines.push("Log excerpt:");

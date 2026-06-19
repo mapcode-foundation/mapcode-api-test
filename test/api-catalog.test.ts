@@ -12,7 +12,7 @@ const point: FixturePoint = {
 };
 
 describe("API_CATALOG", () => {
-  it("contains all Java-derived endpoint families", () => {
+  it("contains all production endpoint families", () => {
     expect(API_CATALOG.map((item) => item.pathTemplate)).toContain("/mapcode/codes/{lat},{lon}");
     expect(API_CATALOG.map((item) => item.pathTemplate)).toContain("/mapcode/coords/{code}");
     expect(API_CATALOG.map((item) => item.pathTemplate)).toContain("/mapcode/alphabets/{alphabet}");

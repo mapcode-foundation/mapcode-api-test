@@ -9,7 +9,7 @@ const request: RequestCase = {
   expectation: "version-shape"
 };
 
-function response(service: "java" | "typescript", version: string): ServiceResponse {
+function response(service: "production" | "candidate", version: string): ServiceResponse {
   return {
     service,
     status: 200,
@@ -23,10 +23,10 @@ describe("Runner", () => {
   it("emits summary, current case, and completion events", async () => {
     const events: string[] = [];
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request],
-      fetchPair: async () => ({ java: response("java", "1"), typescript: response("typescript", "2") })
+      fetchPair: async () => ({ production: response("production", "1"), candidate: response("candidate", "2") })
     });
 
     runner.onEvent((event) => events.push(event.type));
@@ -40,10 +40,10 @@ describe("Runner", () => {
 
   it("records discrepancies when semantic payloads differ", async () => {
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [{ ...request, path: "/mapcode/alphabets/GREEK", query: { precision: "8", include: "territory,alphabet" }, expectation: "parity" }],
-      fetchPair: async () => ({ java: response("java", "one"), typescript: response("typescript", "two") })
+      fetchPair: async () => ({ production: response("production", "one"), candidate: response("candidate", "two") })
     });
     const discrepancies: string[] = [];
 
@@ -60,10 +60,10 @@ describe("Runner", () => {
   it("emits immutable summary snapshots", async () => {
     const summaries: number[] = [];
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request],
-      fetchPair: async () => ({ java: response("java", "1"), typescript: response("typescript", "2") })
+      fetchPair: async () => ({ production: response("production", "1"), candidate: response("candidate", "2") })
     });
 
     runner.onEvent((event) => {
@@ -75,10 +75,38 @@ describe("Runner", () => {
     expect(summaries).toEqual([0, 1]);
   });
 
+  it("reports current and average request throughput", async () => {
+    const times = [1000, 1000, 1250];
+    const runner = new Runner({
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
+      cases: [request],
+      now: () => times.shift() ?? 1250,
+      fetchPair: async () => ({ production: response("production", "1"), candidate: response("candidate", "1") })
+    });
+    const summaries: Array<{ current: number | undefined; average: number | undefined }> = [];
+
+    runner.onEvent((event) => {
+      if (event.type === "run-summary") {
+        summaries.push({
+          current: event.summary.currentRequestsPerSecond,
+          average: event.summary.averageRequestsPerSecond
+        });
+      }
+    });
+
+    await runner.start();
+
+    expect(summaries).toEqual([
+      { current: 0, average: 0 },
+      { current: 4, average: 4 }
+    ]);
+  });
+
   it("can stop while paused without fetching a case", async () => {
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request],
       fetchPair: async () => {
         throw new Error("fetchPair should not run after stop");
@@ -99,8 +127,8 @@ describe("Runner", () => {
 
   it("records infrastructure discrepancies when a request fails", async () => {
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request],
       fetchPair: async () => {
         throw new Error("connect ECONNREFUSED");
@@ -120,14 +148,14 @@ describe("Runner", () => {
   });
 
   it("does not emit response events after stop during an in-flight request", async () => {
-    let resolveFetch!: (value: { java: ServiceResponse; typescript: ServiceResponse }) => void;
+    let resolveFetch!: (value: { production: ServiceResponse; candidate: ServiceResponse }) => void;
     let resolveStarted!: () => void;
     const started = new Promise<void>((resolve) => {
       resolveStarted = resolve;
     });
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request],
       fetchPair: async () => {
         resolveStarted();
@@ -143,7 +171,7 @@ describe("Runner", () => {
     await started;
 
     runner.stop();
-    resolveFetch({ java: response("java", "1"), typescript: response("typescript", "1") });
+    resolveFetch({ production: response("production", "1"), candidate: response("candidate", "1") });
     await runPromise;
 
     expect(events).not.toContain("current-case");
@@ -157,15 +185,15 @@ describe("Runner", () => {
       resolveStarted = resolve;
     });
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request],
       fetchPair: async (_request, signal) => {
         requestSignal = signal;
         resolveStarted();
         return new Promise((resolve, reject) => {
           signal?.addEventListener("abort", () => reject(new Error("aborted")));
-          setTimeout(() => resolve({ java: response("java", "1"), typescript: response("typescript", "1") }), 1_000);
+          setTimeout(() => resolve({ production: response("production", "1"), candidate: response("candidate", "1") }), 1_000);
         });
       }
     });
@@ -197,12 +225,12 @@ describe("Runner", () => {
     };
     const pointStates: string[] = [];
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [firstRequest, secondRequest],
       fetchPair: async (nextRequest) => ({
-        java: response("java", nextRequest.id === "fixture-case-1" ? "one" : "same"),
-        typescript: response("typescript", nextRequest.id === "fixture-case-1" ? "two" : "same")
+        production: response("production", nextRequest.id === "fixture-case-1" ? "one" : "same"),
+        candidate: response("candidate", nextRequest.id === "fixture-case-1" ? "two" : "same")
       })
     });
 
@@ -220,8 +248,8 @@ describe("Runner", () => {
     const fetches: string[] = [];
     const secondRequest: RequestCase = { ...request, id: "territory-json", path: "/mapcode/territories/NLD" };
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request, secondRequest],
       requestDelayMs: 1000,
       sleep: async (ms) => {
@@ -229,7 +257,7 @@ describe("Runner", () => {
       },
       fetchPair: async (nextRequest) => {
         fetches.push(nextRequest.id);
-        return { java: response("java", "1"), typescript: response("typescript", "1") };
+        return { production: response("production", "1"), candidate: response("candidate", "1") };
       }
     });
 
@@ -243,14 +271,14 @@ describe("Runner", () => {
     const sleeps: number[] = [];
     const secondRequest: RequestCase = { ...request, id: "territory-json", path: "/mapcode/territories/NLD" };
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases: [request, secondRequest],
       requestDelayMs: 1000,
       sleep: async (ms) => {
         sleeps.push(ms);
       },
-      fetchPair: async () => ({ java: response("java", "1"), typescript: response("typescript", "1") })
+      fetchPair: async () => ({ production: response("production", "1"), candidate: response("candidate", "1") })
     });
 
     runner.onEvent((event) => {

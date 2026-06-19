@@ -9,12 +9,12 @@ describe("integration run wiring", () => {
       { id: "version-json", method: "GET", path: "/mapcode/version", format: "json", expectation: "version-shape" }
     ];
     const runner = new Runner({
-      javaBaseUrl: "http://java.test",
-      typescriptBaseUrl: "http://ts.test",
+      productionBaseUrl: "http://java.test",
+      candidateBaseUrl: "http://ts.test",
       cases,
       fetchPair: async (request) => ({
-        java: response("java", request, { version: "2" }),
-        typescript: response("typescript", request, { version: "1" })
+        production: response("production", request, { version: "2" }),
+        candidate: response("candidate", request, { version: "1" })
       })
     });
     const summary = await runner.start();
@@ -31,6 +31,6 @@ describe("integration run wiring", () => {
   });
 });
 
-function response(service: "java" | "typescript", _request: RequestCase, canonical: unknown): ServiceResponse {
+function response(service: "production" | "candidate", _request: RequestCase, canonical: unknown): ServiceResponse {
   return { service, status: 200, contentType: "application/json", body: JSON.stringify(canonical), canonical: canonical as never };
 }

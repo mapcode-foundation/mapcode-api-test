@@ -2,7 +2,7 @@ export type ApiFormat = "json" | "xml";
 export type HttpMethod = "GET";
 export type RunProfileName = "Fast" | "Deep";
 export type PointState = "queued" | "active" | "passed" | "failed" | "blocked";
-export type ServiceKind = "java" | "typescript";
+export type ServiceKind = "production" | "candidate";
 export type ServiceMode = "manual" | "auto";
 export type ServiceAvailability = "unknown" | "starting" | "available" | "unavailable";
 
@@ -68,8 +68,8 @@ export interface Discrepancy {
   status: "discrepancy" | "oracle-error" | "infrastructure-error";
   summary: string;
   diffs: SemanticDiff[];
-  java: ServiceResponse;
-  typescript: ServiceResponse;
+  production: ServiceResponse;
+  candidate: ServiceResponse;
   replay: string;
   logExcerpt?: string[];
 }
@@ -82,12 +82,14 @@ export interface RunSummary {
   completedCases: number;
   failures: number;
   roundTrips: number;
+  currentRequestsPerSecond: number;
+  averageRequestsPerSecond: number;
 }
 
 export type RunnerEvent =
   | { type: "run-summary"; summary: RunSummary }
   | { type: "point-state"; fixtureId: string; state: PointState }
-  | { type: "current-case"; java?: ServiceResponse; typescript?: ServiceResponse; request: RequestCase }
+  | { type: "current-case"; production?: ServiceResponse; candidate?: ServiceResponse; request: RequestCase }
   | { type: "discrepancy"; discrepancy: Discrepancy }
   | { type: "service-log"; service: ServiceKind; line: string }
   | { type: "service-status"; services: Record<ServiceKind, ServiceStatus> }

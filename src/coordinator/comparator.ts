@@ -4,32 +4,32 @@ import type { ApiFormat, CanonicalValue, RequestCase, SemanticDiff, ServiceRespo
 const coordinateToleranceDegrees = 0.00001;
 
 export function compareResponses(
-  java: ServiceResponse,
-  typescript: ServiceResponse,
+  production: ServiceResponse,
+  candidate: ServiceResponse,
   path: string,
   options: { format?: ApiFormat; expectation?: RequestCase["expectation"] } = {}
 ): SemanticDiff[] {
   const diffs: SemanticDiff[] = [];
 
-  if (java.status !== typescript.status) {
+  if (production.status !== candidate.status) {
     diffs.push({
       path: "$.status",
-      expected: java.status,
-      actual: typescript.status,
+      expected: production.status,
+      actual: candidate.status,
       message: "Expected HTTP status codes to match"
     });
   }
 
   if (options.format && !isStatusEndpoint(path)) {
-    diffs.push(...compareContentTypes(java, typescript, options.format));
+    diffs.push(...compareContentTypes(production, candidate, options.format));
   }
 
   if (options.expectation === "version-shape" || isVersionEndpoint(path)) {
-    return diffs.concat(compareVersionShape(java.canonical, typescript.canonical));
+    return diffs.concat(compareVersionShape(production.canonical, candidate.canonical));
   }
 
   return diffs.concat(
-    compareCanonical(java.canonical ?? null, typescript.canonical ?? null, "$", {
+    compareCanonical(production.canonical ?? null, candidate.canonical ?? null, "$", {
       coordinateToleranceDegrees
     })
   );
@@ -54,7 +54,7 @@ export function compareCanonical(
           path,
           expected,
           actual,
-          message: "Expected TypeScript to emit a non-null value when Java emits this field"
+          message: "Expected Candidate to emit a non-null value when Production emits this field"
         }
       ];
     }
@@ -78,18 +78,18 @@ export function compareCanonical(
     return diffs;
   }
 
-  return [{ path, expected, actual, message: "Expected Java value to match TypeScript value" }];
+  return [{ path, expected, actual, message: "Expected Production value to match Candidate value" }];
 }
 
-export function roundTripWithinTolerance(original: LatLon, javaDecoded: LatLon, tsDecoded: LatLon, toleranceMeters: number) {
-  const javaDrift = distanceMeters(original, javaDecoded);
-  const tsDrift = distanceMeters(original, tsDecoded);
-  const serviceDrift = distanceMeters(javaDecoded, tsDecoded);
+export function roundTripWithinTolerance(original: LatLon, productionDecoded: LatLon, candidateDecoded: LatLon, toleranceMeters: number) {
+  const productionDrift = distanceMeters(original, productionDecoded);
+  const candidateDrift = distanceMeters(original, candidateDecoded);
+  const serviceDrift = distanceMeters(productionDecoded, candidateDecoded);
 
   return {
-    ok: javaDrift <= toleranceMeters && tsDrift <= toleranceMeters && serviceDrift <= toleranceMeters,
-    javaDrift,
-    tsDrift,
+    ok: productionDrift <= toleranceMeters && candidateDrift <= toleranceMeters && serviceDrift <= toleranceMeters,
+    productionDrift,
+    candidateDrift,
     serviceDrift
   };
 }
@@ -107,22 +107,22 @@ function compareVersionShape(expected: CanonicalValue | undefined, actual: Canon
   ];
 }
 
-function compareContentTypes(java: ServiceResponse, typescript: ServiceResponse, format: ApiFormat): SemanticDiff[] {
+function compareContentTypes(production: ServiceResponse, candidate: ServiceResponse, format: ApiFormat): SemanticDiff[] {
   const diffs: SemanticDiff[] = [];
-  if (!contentTypeMatches(java.contentType, format)) {
+  if (!contentTypeMatches(production.contentType, format)) {
     diffs.push({
-      path: "$.java.contentType",
+      path: "$.production.contentType",
       expected: expectedContentType(format),
-      actual: java.contentType,
-      message: "Expected Java response content type to match requested format"
+      actual: production.contentType,
+      message: "Expected Production response content type to match requested format"
     });
   }
-  if (!contentTypeMatches(typescript.contentType, format)) {
+  if (!contentTypeMatches(candidate.contentType, format)) {
     diffs.push({
-      path: "$.typescript.contentType",
+      path: "$.candidate.contentType",
       expected: expectedContentType(format),
-      actual: typescript.contentType,
-      message: "Expected TypeScript response content type to match requested format"
+      actual: candidate.contentType,
+      message: "Expected Candidate response content type to match requested format"
     });
   }
   return diffs;

@@ -30,8 +30,8 @@ export async function getServices(): Promise<ServicesResponse> {
   return response.json();
 }
 
-export async function checkService(kind: ServiceKind): Promise<ServiceStatus> {
-  return postJson<ServiceStatus>(`/api/services/${kind}/check`);
+export async function checkService(kind: ServiceKind, baseUrl?: string): Promise<ServiceStatus> {
+  return postJson<ServiceStatus>(`/api/services/${kind}/check`, baseUrl === undefined ? undefined : { baseUrl });
 }
 
 export async function configureService(kind: ServiceKind, baseUrl: string, sourcePath: string): Promise<ServiceStatus> {

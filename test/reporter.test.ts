@@ -11,7 +11,9 @@ const summary: RunSummary = {
   totalCases: 1,
   completedCases: 1,
   failures: 1,
-  roundTrips: 0
+  roundTrips: 0,
+  currentRequestsPerSecond: 0,
+  averageRequestsPerSecond: 0
 };
 
 const discrepancy: Discrepancy = {
@@ -26,18 +28,18 @@ const discrepancy: Discrepancy = {
       path: "$.mapcodes[0].territory",
       expected: "NLD",
       actual: "AAA",
-      message: "Expected Java value to match TypeScript value"
+      message: "Expected Production value to match Candidate value"
     }
   ],
-  java: {
-    service: "java",
+  production: {
+    service: "production",
     status: 200,
     contentType: "application/json",
     body: "secret TOMTOM_API_KEY=abc",
     canonical: { territory: "NLD", TOMTOM_API_KEY: "json-secret-value" }
   },
-  typescript: {
-    service: "typescript",
+  candidate: {
+    service: "candidate",
     status: 200,
     contentType: "application/json",
     body: '{"TOMTOM_API_KEY":"body-secret-value","territory":"AAA"}',
@@ -54,7 +56,7 @@ describe("writeReports", () => {
       outputDir: dir,
       summary,
       discrepancies: [discrepancy],
-      serviceVersions: { java: "2", typescript: "1" }
+      serviceVersions: { production: "2", candidate: "1" }
     });
     const md = await readFile(result.markdownPath, "utf8");
     const json = await readFile(result.jsonPath, "utf8");
@@ -68,9 +70,9 @@ describe("writeReports", () => {
     expect(json).not.toContain("body-secret-value");
     expect(json).not.toContain("log-secret-value");
     expect(json).not.toContain("quoted-env-secret");
-    expect(parsed.discrepancies[0].java.canonical.TOMTOM_API_KEY).toBe("[REDACTED]");
-    expect(parsed.discrepancies[0].java.canonical.territory).toBe("NLD");
-    expect(parsed.discrepancies[0].typescript.body).toContain('"TOMTOM_API_KEY":"[REDACTED]"');
+    expect(parsed.discrepancies[0].production.canonical.TOMTOM_API_KEY).toBe("[REDACTED]");
+    expect(parsed.discrepancies[0].production.canonical.territory).toBe("NLD");
+    expect(parsed.discrepancies[0].candidate.body).toContain('"TOMTOM_API_KEY":"[REDACTED]"');
   });
 
   it("can render a report preview even when files cannot be written", () => {
@@ -78,7 +80,7 @@ describe("writeReports", () => {
       outputDir: "/path/that/does/not/matter",
       summary,
       discrepancies: [discrepancy],
-      serviceVersions: { java: "2", typescript: "1" }
+      serviceVersions: { production: "2", candidate: "1" }
     });
 
     expect(result.markdown).toContain("payload differs");
@@ -97,7 +99,7 @@ describe("writeReports", () => {
       outputDir: "/path/that/does/not/matter",
       summary,
       discrepancies: [discrepancy, secondDiscrepancy],
-      serviceVersions: { java: "2", typescript: "1" }
+      serviceVersions: { production: "2", candidate: "1" }
     });
 
     expect(result.markdown).toContain("### Discrepancy 1: d1");

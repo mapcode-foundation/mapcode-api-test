@@ -1,4 +1,5 @@
 import { canonicalizeBody } from "./canonicalizer";
+import { resolveServiceUrl } from "./service-url";
 import type { RequestCase, ServiceKind, ServiceResponse } from "../shared/types";
 
 export async function fetchService(
@@ -7,7 +8,7 @@ export async function fetchService(
   request: RequestCase,
   options: { signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<ServiceResponse> {
-  const url = new URL(request.path, baseUrl);
+  const url = resolveServiceUrl(baseUrl, request.path);
 
   for (const [key, value] of Object.entries(request.query ?? {})) {
     url.searchParams.set(key, value);

@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { buildServiceStartPlan, createServerApp, parseRequestDelayMs } from "../src/coordinator/server";
 import { inject } from "./fixtures/inject";
 import { startMockService } from "./fixtures/mock-service";
@@ -56,14 +58,14 @@ describe("coordinator server", () => {
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({
-      java: {
-        label: "Java API (leading)",
+      production: {
+        label: "Production API",
         mode: "manual",
         baseUrl: "http://127.0.0.1:8081",
         sourcePath: "../mapcode-rest-service"
       },
-      typescript: {
-        label: "TypeScript API (ported)",
+      candidate: {
+        label: "Candidate API",
         mode: "manual",
         baseUrl: "http://127.0.0.1:8082",
         sourcePath: "../mapcode-rest-service-ts"
@@ -73,14 +75,14 @@ describe("coordinator server", () => {
 
   it("stores a source repo path with service configuration before the API is running", async () => {
     const app = createServerApp({ env: {} });
-    const response = await inject(app, "/api/services/typescript/config", {
+    const response = await inject(app, "/api/services/candidate/config", {
       method: "POST",
       body: { baseUrl: "http://127.0.0.1:9082", sourcePath: "/tmp/mapcode-rest-service-ts" }
     });
     const services = await inject(app, "/api/services");
 
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(services.body).typescript).toMatchObject({
+    expect(JSON.parse(services.body).candidate).toMatchObject({
       baseUrl: "http://127.0.0.1:9082",
       sourcePath: "/tmp/mapcode-rest-service-ts",
       availability: "unavailable"
@@ -92,7 +94,7 @@ describe("coordinator server", () => {
     const service = await startMockService({ "/mapcode/status": { status: 200, body: "ok" } });
 
     try {
-      const response = await inject(app, "/api/services/typescript/config", {
+      const response = await inject(app, "/api/services/candidate/config", {
         method: "POST",
         body: { baseUrl: service.baseUrl, sourcePath: "/tmp/mapcode-rest-service-ts" }
       });
@@ -105,19 +107,67 @@ describe("coordinator server", () => {
     }
   });
 
+  it("preserves path-prefixed service URLs when saving and checking configuration", async () => {
+    const app = createServerApp({ env: {} });
+    const service = await startMockService({
+      "/mapcode-rest-service-ts/mapcode/status": { status: 200, body: "ok" }
+    });
+
+    try {
+      const baseUrl = `${service.baseUrl}/mapcode-rest-service-ts`;
+      const response = await inject(app, "/api/services/candidate/config", {
+        method: "POST",
+        body: { baseUrl, sourcePath: "/tmp/mapcode-rest-service-ts" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toMatchObject({
+        baseUrl,
+        availability: "available"
+      });
+      expect(service.requests.map((request) => request.path)).toEqual(["/mapcode-rest-service-ts/mapcode/status"]);
+    } finally {
+      await service.close();
+    }
+  });
+
+  it("checks a draft path-prefixed service URL from the check payload", async () => {
+    const app = createServerApp({ env: {} });
+    const service = await startMockService({
+      "/mapcode-rest-service-ts/mapcode/status": { status: 200, body: "ok" }
+    });
+
+    try {
+      const baseUrl = `${service.baseUrl}/mapcode-rest-service-ts`;
+      const response = await inject(app, "/api/services/candidate/check", {
+        method: "POST",
+        body: { baseUrl }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toMatchObject({
+        baseUrl,
+        availability: "available"
+      });
+      expect(service.requests.map((request) => request.path)).toEqual(["/mapcode-rest-service-ts/mapcode/status"]);
+    } finally {
+      await service.close();
+    }
+  });
+
   it("stops both managed APIs and reports them as unavailable", async () => {
     const app = createServerApp({ env: {} });
     const response = await inject(app, "/api/services/stop", { method: "POST" });
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({
-      java: {
+      production: {
         availability: "unavailable",
-        logs: ["Stopped Java API (leading)"]
+        logs: ["Stopped Production API"]
       },
-      typescript: {
+      candidate: {
         availability: "unavailable",
-        logs: ["Stopped TypeScript API (ported)"]
+        logs: ["Stopped Candidate API"]
       }
     });
   });
@@ -131,11 +181,11 @@ describe("coordinator server", () => {
       }
     });
 
-    await inject(app, "/api/services/java/config", {
+    await inject(app, "/api/services/production/config", {
       method: "POST",
       body: { baseUrl: "http://127.0.0.1:19081", sourcePath: "../mapcode-rest-service" }
     });
-    await inject(app, "/api/services/typescript/config", {
+    await inject(app, "/api/services/candidate/config", {
       method: "POST",
       body: { baseUrl: "http://127.0.0.1:19082", sourcePath: "../mapcode-rest-service-ts" }
     });
@@ -147,7 +197,7 @@ describe("coordinator server", () => {
 
   it("rejects automatic start when the source repo path does not exist", async () => {
     const app = createServerApp({ env: {} });
-    const response = await inject(app, "/api/services/java/start", {
+    const response = await inject(app, "/api/services/production/start", {
       method: "POST",
       body: { baseUrl: "http://127.0.0.1:9081", sourcePath: "/tmp/does-not-exist-mapcode-api-test" }
     });
@@ -155,24 +205,45 @@ describe("coordinator server", () => {
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body)).toMatchObject({
       error: "Source path unavailable",
-      service: "Java API (leading)"
+      service: "Production API"
     });
   });
 
-  it("builds the Java service by installing prod artifacts before running Jetty in deployment", () => {
-    const plan = buildServiceStartPlan("java", "http://127.0.0.1:9081", "/tmp/mapcode-rest-service");
+  it("builds a Java repo by installing prod artifacts before running Jetty in deployment", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "mapcode-java-repo-"));
+    await writeFile(join(dir, "pom.xml"), "<project />");
+    await mkdir(join(dir, "deployment"));
+
+    const plan = buildServiceStartPlan("candidate", "http://127.0.0.1:9081", dir);
 
     expect(plan).toMatchObject([
       {
         command: "mvn",
         args: ["install", "-Pprod"],
-        cwd: resolve("/tmp/mapcode-rest-service"),
+        cwd: resolve(dir),
         waitForExit: true
       },
       {
         command: "mvn",
         args: ["-Dmaven.httpserver.port=9081", "jetty:run"],
-        cwd: resolve("/tmp/mapcode-rest-service/deployment"),
+        cwd: resolve(dir, "deployment"),
+        waitForExit: false
+      }
+    ]);
+  });
+
+  it("starts a Node repo with npm regardless of service role", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "mapcode-node-repo-"));
+    await writeFile(join(dir, "package.json"), "{}");
+
+    const plan = buildServiceStartPlan("production", "http://127.0.0.1:9082", dir);
+
+    expect(plan).toMatchObject([
+      {
+        command: "npm",
+        args: ["run", "dev"],
+        cwd: resolve(dir),
+        env: expect.objectContaining({ PORT: "9082" }),
         waitForExit: false
       }
     ]);
@@ -180,11 +251,11 @@ describe("coordinator server", () => {
 
   it("blocks run start and names APIs that are unavailable", async () => {
     const app = createServerApp({ env: {} });
-    await inject(app, "/api/services/java/config", {
+    await inject(app, "/api/services/production/config", {
       method: "POST",
       body: { baseUrl: "http://127.0.0.1:19081", sourcePath: "../mapcode-rest-service" }
     });
-    await inject(app, "/api/services/typescript/config", {
+    await inject(app, "/api/services/candidate/config", {
       method: "POST",
       body: { baseUrl: "http://127.0.0.1:19082", sourcePath: "../mapcode-rest-service-ts" }
     });
@@ -193,7 +264,7 @@ describe("coordinator server", () => {
     expect(response.statusCode).toBe(409);
     expect(JSON.parse(response.body)).toEqual({
       error: "APIs unavailable",
-      unavailable: ["Java API (leading)", "TypeScript API (ported)"]
+      unavailable: ["Production API", "Candidate API"]
     });
   });
 

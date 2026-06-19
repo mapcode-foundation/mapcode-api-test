@@ -2,18 +2,18 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 const operationalServices = {
-  java: {
-    kind: "java",
-    label: "Java API (leading)",
+  production: {
+    kind: "production",
+    label: "Production API",
     mode: "manual",
     baseUrl: "http://127.0.0.1:8081",
     sourcePath: "../mapcode-rest-service",
     availability: "available",
     logs: []
   },
-  typescript: {
-    kind: "typescript",
-    label: "TypeScript API (ported)",
+  candidate: {
+    kind: "candidate",
+    label: "Candidate API",
     mode: "manual",
     baseUrl: "http://127.0.0.1:8082",
     sourcePath: "../mapcode-rest-service-ts",
@@ -74,15 +74,15 @@ test("dashboard keeps API response panes vertically split at app browser widths"
   await page.setViewportSize({ width: 900, height: 900 });
   await page.goto("/");
 
-  const javaPane = page.locator(".service-grid .pane").filter({ hasText: "Java API (leading)" });
-  const typescriptPane = page.locator(".service-grid .pane").filter({ hasText: "TypeScript API (ported)" });
-  const javaBox = await javaPane.boundingBox();
-  const typescriptBox = await typescriptPane.boundingBox();
+  const productionPane = page.locator(".service-grid .pane").filter({ hasText: "Production API" });
+  const candidatePane = page.locator(".service-grid .pane").filter({ hasText: "Candidate API" });
+  const productionBox = await productionPane.boundingBox();
+  const candidateBox = await candidatePane.boundingBox();
 
-  expect(javaBox).not.toBeNull();
-  expect(typescriptBox).not.toBeNull();
-  expect(Math.abs(javaBox!.y - typescriptBox!.y)).toBeLessThan(2);
-  expect(typescriptBox!.x).toBeGreaterThan(javaBox!.x + javaBox!.width * 0.8);
+  expect(productionBox).not.toBeNull();
+  expect(candidateBox).not.toBeNull();
+  expect(Math.abs(productionBox!.y - candidateBox!.y)).toBeLessThan(2);
+  expect(candidateBox!.x).toBeGreaterThan(productionBox!.x + productionBox!.width * 0.8);
 });
 
 test("dashboard sends the selected request delay when starting a run", async ({ page }) => {
@@ -204,20 +204,20 @@ test("dashboard stop wins over an in-flight speed resume cycle", async ({ page }
   await page.goto("/");
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByLabel("Delay").selectOption("3");
-  await expect(page.locator(".progress-copy span")).toContainText("paused");
+  await expect(page.locator(".progress-state")).toContainText("paused");
 
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   releaseResume();
 
   await expect.poll(() => resumeFulfilled).toBe(true);
-  await expect(page.locator(".progress-copy span")).toContainText("stopped");
+  await expect(page.locator(".progress-state")).toContainText("stopped");
 });
 
 test("dashboard disables Start while either API is not operational", async ({ page }) => {
   await routeServices(page, {
     ...operationalServices,
-    typescript: {
-      ...operationalServices.typescript,
+    candidate: {
+      ...operationalServices.candidate,
       availability: "unavailable"
     }
   });
@@ -229,9 +229,9 @@ test("dashboard disables Start while either API is not operational", async ({ pa
 
 test("dashboard opens service configuration from a service chip", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /Java API \(leading\)/ }).click();
+  await page.getByRole("button", { name: /Production API/ }).click();
 
-  const dialog = page.getByRole("dialog", { name: "Java API (leading)" });
+  const dialog = page.getByRole("dialog", { name: "Production API" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Save settings" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Start", exact: true })).toBeVisible();
@@ -242,30 +242,60 @@ test("dashboard opens service configuration from a service chip", async ({ page 
   await expect(page.locator(".service-log")).toContainText("No service logs yet.");
 });
 
-test("dashboard auto-starts both APIs from the main screen", async ({ page }) => {
-  const calls: unknown[] = [];
-  await page.route("**/api/services/java/start", async (route) => {
-    calls.push({ kind: "java", payload: route.request().postDataJSON() });
+test("dashboard checks the draft service URL from the dialog", async ({ page }) => {
+  let checkPayload: unknown;
+  await routeServices(page);
+  await page.route("**/api/services/candidate/check", async (route) => {
+    checkPayload = route.request().postDataJSON();
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        kind: "java",
-        label: "Java API (leading)",
+        ...operationalServices.candidate,
+        baseUrl: "https://mapcode-rest-service-nr5qy.ondigitalocean.app/mapcode-rest-service-ts",
+        availability: "available"
+      })
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Candidate API/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Candidate API" });
+  await expect(page.getByLabel("Source repository path")).toHaveValue("../mapcode-rest-service-ts");
+  await page
+    .getByLabel("Specify URL/port")
+    .fill("https://mapcode-rest-service-nr5qy.ondigitalocean.app/mapcode-rest-service-ts");
+  await dialog.getByRole("button", { name: "Check" }).click();
+
+  expect(checkPayload).toEqual({
+    baseUrl: "https://mapcode-rest-service-nr5qy.ondigitalocean.app/mapcode-rest-service-ts"
+  });
+  await expect(dialog.getByRole("status")).toContainText("operational");
+});
+
+test("dashboard auto-starts both APIs from the main screen", async ({ page }) => {
+  const calls: unknown[] = [];
+  await page.route("**/api/services/production/start", async (route) => {
+    calls.push({ kind: "production", payload: route.request().postDataJSON() });
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "production",
+        label: "Production API",
         mode: "auto",
         baseUrl: "http://127.0.0.1:8081",
         sourcePath: "../mapcode-rest-service",
         availability: "available",
-        logs: ["java started"]
+        logs: ["production started"]
       })
     });
   });
-  await page.route("**/api/services/typescript/start", async (route) => {
-    calls.push({ kind: "typescript", payload: route.request().postDataJSON() });
+  await page.route("**/api/services/candidate/start", async (route) => {
+    calls.push({ kind: "candidate", payload: route.request().postDataJSON() });
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        kind: "typescript",
-        label: "TypeScript API (ported)",
+        kind: "candidate",
+        label: "Candidate API",
         mode: "auto",
         baseUrl: "http://127.0.0.1:8082",
         sourcePath: "../mapcode-rest-service-ts",
@@ -278,15 +308,15 @@ test("dashboard auto-starts both APIs from the main screen", async ({ page }) =>
   await page.goto("/");
   await page.getByRole("button", { name: "Auto-start APIs" }).click();
 
-  await expect(page.getByRole("button", { name: "Java API (leading) operational" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "TypeScript API (ported) operational" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Production API operational" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Candidate API operational" })).toBeVisible();
   expect(calls).toEqual([
     {
-      kind: "java",
+      kind: "production",
       payload: { baseUrl: "http://127.0.0.1:8081", sourcePath: "../mapcode-rest-service" }
     },
     {
-      kind: "typescript",
+      kind: "candidate",
       payload: { baseUrl: "http://127.0.0.1:8082", sourcePath: "../mapcode-rest-service-ts" }
     }
   ]);
@@ -295,15 +325,15 @@ test("dashboard auto-starts both APIs from the main screen", async ({ page }) =>
 test("dashboard stops both APIs from the main screen", async ({ page }) => {
   let stopCalled = false;
   const stoppedServices = {
-    java: {
-      ...operationalServices.java,
+    production: {
+      ...operationalServices.production,
       availability: "unavailable",
-      logs: ["Stopped Java API (leading)"]
+      logs: ["Stopped Production API"]
     },
-    typescript: {
-      ...operationalServices.typescript,
+    candidate: {
+      ...operationalServices.candidate,
       availability: "unavailable",
-      logs: ["Stopped TypeScript API (ported)"]
+      logs: ["Stopped Candidate API"]
     }
   };
 
@@ -322,17 +352,17 @@ test("dashboard stops both APIs from the main screen", async ({ page }) => {
   await page.getByRole("button", { name: "Stop APIs" }).click();
 
   expect(stopCalled).toBe(true);
-  await expect(page.getByRole("button", { name: "Java API (leading) failed" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "TypeScript API (ported) failed" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Production API failed" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Candidate API failed" })).toBeVisible();
 });
 
 test("dashboard keeps service dialog open when starting one API from the dialog", async ({ page }) => {
-  await page.route("**/api/services/typescript/start", async (route) => {
+  await page.route("**/api/services/candidate/start", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        kind: "typescript",
-        label: "TypeScript API (ported)",
+        kind: "candidate",
+        label: "Candidate API",
         mode: "auto",
         baseUrl: "http://127.0.0.1:9082",
         sourcePath: "/tmp/mapcode-rest-service-ts",
@@ -343,8 +373,8 @@ test("dashboard keeps service dialog open when starting one API from the dialog"
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: /TypeScript API \(ported\)/ }).click();
-  const dialog = page.getByRole("dialog", { name: "TypeScript API (ported)" });
+  await page.getByRole("button", { name: /Candidate API/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Candidate API" });
   await page.getByLabel("Specify URL/port").fill("http://127.0.0.1:9082");
   await page.getByLabel("Source repository path").fill("/tmp/mapcode-rest-service-ts");
   await dialog.getByRole("button", { name: "Start", exact: true }).click();

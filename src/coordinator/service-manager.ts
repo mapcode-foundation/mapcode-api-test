@@ -1,21 +1,22 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { resolveServiceUrl } from "./service-url";
 
 export interface ServiceManager {
-  javaBaseUrl: string;
-  typescriptBaseUrl: string;
+  productionBaseUrl: string;
+  candidateBaseUrl: string;
   logs: string[];
-  waitUntilReady(): Promise<{ javaReady: boolean; typescriptReady: boolean }>;
+  waitUntilReady(): Promise<{ productionReady: boolean; candidateReady: boolean }>;
   stop(): Promise<void>;
 }
 
-export function createAttachedServiceManager(input: { javaBaseUrl: string; typescriptBaseUrl: string }): ServiceManager {
+export function createAttachedServiceManager(input: { productionBaseUrl: string; candidateBaseUrl: string }): ServiceManager {
   return {
-    javaBaseUrl: input.javaBaseUrl,
-    typescriptBaseUrl: input.typescriptBaseUrl,
+    productionBaseUrl: input.productionBaseUrl,
+    candidateBaseUrl: input.candidateBaseUrl,
     logs: [],
     async waitUntilReady() {
-      const [javaReady, typescriptReady] = await Promise.all([isReady(input.javaBaseUrl), isReady(input.typescriptBaseUrl)]);
-      return { javaReady, typescriptReady };
+      const [productionReady, candidateReady] = await Promise.all([isReady(input.productionBaseUrl), isReady(input.candidateBaseUrl)]);
+      return { productionReady, candidateReady };
     },
     async stop() {
       return undefined;
@@ -24,17 +25,17 @@ export function createAttachedServiceManager(input: { javaBaseUrl: string; types
 }
 
 export function createManagedServiceManager(input: {
-  javaCommand: string;
-  javaArgs: string[];
-  javaBaseUrl: string;
-  typescriptCommand: string;
-  typescriptArgs: string[];
-  typescriptBaseUrl: string;
+  productionCommand: string;
+  productionArgs: string[];
+  productionBaseUrl: string;
+  candidateCommand: string;
+  candidateArgs: string[];
+  candidateBaseUrl: string;
 }): ServiceManager {
   const logs: string[] = [];
   const children: ChildProcessWithoutNullStreams[] = [
-    spawn(input.javaCommand, input.javaArgs, { cwd: "../mapcode-rest-service" }),
-    spawn(input.typescriptCommand, input.typescriptArgs, { cwd: "../mapcode-rest-service-ts" })
+    spawn(input.productionCommand, input.productionArgs, { cwd: "../mapcode-rest-service" }),
+    spawn(input.candidateCommand, input.candidateArgs, { cwd: "../mapcode-rest-service-ts" })
   ];
 
   for (const child of children) {
@@ -43,15 +44,15 @@ export function createManagedServiceManager(input: {
   }
 
   return {
-    javaBaseUrl: input.javaBaseUrl,
-    typescriptBaseUrl: input.typescriptBaseUrl,
+    productionBaseUrl: input.productionBaseUrl,
+    candidateBaseUrl: input.candidateBaseUrl,
     logs,
     async waitUntilReady() {
-      const [javaReady, typescriptReady] = await Promise.all([
-        waitForReady(input.javaBaseUrl),
-        waitForReady(input.typescriptBaseUrl)
+      const [productionReady, candidateReady] = await Promise.all([
+        waitForReady(input.productionBaseUrl),
+        waitForReady(input.candidateBaseUrl)
       ]);
-      return { javaReady, typescriptReady };
+      return { productionReady, candidateReady };
     },
     async stop() {
       for (const child of children) {
@@ -63,7 +64,7 @@ export function createManagedServiceManager(input: {
 
 export async function isReady(baseUrl: string): Promise<boolean> {
   try {
-    const response = await fetch(new URL("/mapcode/status", baseUrl));
+    const response = await fetch(resolveServiceUrl(baseUrl, "/mapcode/status"));
     return response.ok;
   } catch {
     return false;

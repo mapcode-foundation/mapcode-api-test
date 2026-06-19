@@ -6,7 +6,7 @@ export function DiscrepancyDetail({ item }: { item?: Discrepancy }) {
       <div className="panel-head">Selected Failure</div>
       <div className="detail-body">
         <span className="label">
-          Canonical diff <span className="label-note">(path: Java canonical value -&gt; TypeScript canonical value)</span>
+          Canonical diff <span className="label-note">(path: Production canonical value -&gt; Candidate canonical value)</span>
         </span>
         <code>
           {item

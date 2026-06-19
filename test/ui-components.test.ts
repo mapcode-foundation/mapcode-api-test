@@ -24,20 +24,22 @@ const summary: RunSummary = {
   totalCases: 40,
   completedCases: 12,
   failures: 2,
-  roundTrips: 6
+  roundTrips: 6,
+  currentRequestsPerSecond: 7.5,
+  averageRequestsPerSecond: 3.2
 };
 
 describe("ServicePane", () => {
   it("shows query parameters, non-OK statuses, and falsy canonical payloads", () => {
     const response: ServiceResponse = {
-      service: "typescript",
+      service: "candidate",
       status: 400,
       contentType: "application/json",
       body: "false",
       canonical: false
     };
 
-    const markup = renderToStaticMarkup(createElement(ServicePane, { title: "TypeScript API (ported)", request, response }));
+    const markup = renderToStaticMarkup(createElement(ServicePane, { title: "Candidate API", request, response }));
 
     expect(markup).toContain("400");
     expect(markup).not.toContain("400 OK");
@@ -52,7 +54,7 @@ describe("DiscrepancyDetail", () => {
     const markup = renderToStaticMarkup(createElement(DiscrepancyDetail, {}));
 
     expect(markup).toContain("Canonical diff");
-    expect(markup).toContain("path: Java canonical value -&gt; TypeScript canonical value");
+    expect(markup).toContain("path: Production canonical value -&gt; Candidate canonical value");
   });
 });
 
@@ -63,13 +65,21 @@ describe("App shell", () => {
     expect(markup).toContain("Fast");
     expect(markup).toContain("Deep");
     expect(markup).not.toContain("Custom");
-    expect(markup).toContain("Java API (leading)");
-    expect(markup).toContain("TypeScript API (ported)");
-    expect(markup).toContain("Java API (leading) not started");
-    expect(markup).toContain("TypeScript API (ported) not started");
-    expect(markup).not.toContain("Java API (leading) unknown");
+    expect(markup).toContain("Production API");
+    expect(markup).toContain("Candidate API");
+    expect(markup).toContain("Production API not started");
+    expect(markup).toContain("Candidate API not started");
+    expect(markup).not.toContain("Java API");
+    expect(markup).not.toContain("TypeScript API");
     expect(markup).toContain(">Report</button>");
     expect(markup).not.toContain("Save report");
+  });
+
+  it("shows current and average throughput in the run progress bar", () => {
+    const markup = renderToStaticMarkup(createElement(App));
+
+    expect(markup).toContain("Current 0.0 reqs/sec");
+    expect(markup).toContain("Avg 0.0 reqs/sec");
   });
 
   it("disables Start while APIs are not operational", () => {

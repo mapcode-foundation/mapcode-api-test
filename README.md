@@ -33,8 +33,8 @@ npm run dev:ui
 
 Default managed mode expects:
 
-- Java service: `../mapcode-rest-service`
-- TypeScript service: `../mapcode-rest-service-ts`
+- Production service: `../mapcode-rest-service`
+- Candidate service: `../mapcode-rest-service-ts`
 
 Attached service base URLs are accepted by the coordinator run API. Dashboard controls for editing those URLs are a follow-up.
 
